@@ -972,6 +972,118 @@ class TestSchemaMigration2(_ScopedTestBase):
         self.assertIn("scope", cols)
 
 
+class TestRememberCommand(unittest.TestCase):
+    """
+    GIVEN the /remember command handler
+    WHEN processing different /remember inputs
+    THEN facts or decisions are stored with the correct scope and type
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        _cfg.DB_PATH = self.db_path
+
+    def tearDown(self):
+        _cfg.DB_PATH = Path(tempfile.mktemp(suffix=".duckdb"))
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def _run_remember(self, prompt: str, cwd: str = "/tmp") -> str:
+        """Simulate the /remember path by calling _handle_remember and capturing stdout."""
+        import io
+        import importlib.util
+        from contextlib import redirect_stdout, redirect_stderr
+
+        # Load the hook script as a module (it's not in a package)
+        spec = importlib.util.spec_from_file_location(
+            "user_prompt_submit",
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        payload = {"prompt": prompt, "cwd": cwd, "session_id": "test-remember"}
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+            mod._handle_remember(prompt, payload)
+        return stdout_buf.getvalue()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_remember_fact_then_stored_as_long_term_fact(self, mock_emb):
+        output = self._run_remember("/remember The API uses gRPC for inter-service communication")
+        parsed = json.loads(output)
+        self.assertIn("Stored", parsed["additionalContext"])
+        self.assertIn("fact", parsed["additionalContext"])
+
+        conn = db.get_connection(db_path=str(self.db_path))
+        facts = db.get_facts_by_temporal(conn, "long", 10)
+        texts = [f["text"] for f in facts]
+        self.assertIn("The API uses gRPC for inter-service communication", texts)
+        conn.close()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_remember_global_then_stored_in_global_scope(self, mock_emb):
+        output = self._run_remember("/remember global: My name is Ben")
+        parsed = json.loads(output)
+        self.assertIn("global", parsed["additionalContext"])
+
+        conn = db.get_connection(db_path=str(self.db_path))
+        row = conn.execute(
+            "SELECT scope FROM facts WHERE text = 'My name is Ben'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], _cfg.GLOBAL_SCOPE)
+        conn.close()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_remember_decision_then_stored_as_decision(self, mock_emb):
+        output = self._run_remember("/remember decision: We chose PostgreSQL over MySQL")
+        parsed = json.loads(output)
+        self.assertIn("decision", parsed["additionalContext"])
+
+        conn = db.get_connection(db_path=str(self.db_path))
+        decisions = db.get_decisions(conn, 10)
+        texts = [d["text"] for d in decisions]
+        self.assertIn("We chose PostgreSQL over MySQL", texts)
+        conn.close()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_remember_global_decision_then_stored_as_global_decision(self, mock_emb):
+        output = self._run_remember("/remember global decision: Always use TypeScript")
+        parsed = json.loads(output)
+        self.assertIn("decision", parsed["additionalContext"])
+        self.assertIn("global", parsed["additionalContext"])
+
+        conn = db.get_connection(db_path=str(self.db_path))
+        row = conn.execute(
+            "SELECT scope FROM decisions WHERE text = 'Always use TypeScript'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], _cfg.GLOBAL_SCOPE)
+        conn.close()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_remember_duplicate_then_reinforced_not_duplicated(self, mock_emb):
+        self._run_remember("/remember The API uses REST endpoints")
+        output = self._run_remember("/remember The API uses REST endpoints")
+        parsed = json.loads(output)
+        self.assertIn("Reinforced", parsed["additionalContext"])
+
+        conn = db.get_connection(db_path=str(self.db_path))
+        count = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
+        self.assertEqual(count, 1)
+        conn.close()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_remember_empty_then_shows_usage(self, mock_emb):
+        output = self._run_remember("/remember")
+        parsed = json.loads(output)
+        self.assertIn("Usage", parsed["additionalContext"])
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

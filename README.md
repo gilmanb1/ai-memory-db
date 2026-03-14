@@ -23,6 +23,26 @@ Two injection points make stored knowledge available:
 
 Both enforce token budgets to avoid context window bloat.
 
+## /remember Command
+
+Type `/remember` in any Claude Code prompt to store something to long-term memory immediately:
+
+```
+/remember The API uses gRPC for inter-service communication
+/remember global: My name is Ben
+/remember decision: We chose PostgreSQL over MySQL
+/remember global decision: Always use TypeScript for frontend projects
+```
+
+| Prefix | Effect |
+|--------|--------|
+| *(none)* | Store as fact in current project scope |
+| `global:` | Store as fact in global scope (all projects) |
+| `decision:` | Store as decision in current project scope |
+| `global decision:` | Store as decision in global scope |
+
+All `/remember` items are stored with `temporal_class=long` and `confidence=high`. Duplicate text is reinforced rather than duplicated.
+
 ## Project Scoping
 
 Knowledge is scoped per git repository. Each repo's facts, decisions, and entities are isolated from other projects.

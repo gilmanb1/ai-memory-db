@@ -1316,6 +1316,315 @@ class TestRememberCaseInsensitive(unittest.TestCase):
         conn.close()
 
 
+class TestForgetSearch(unittest.TestCase):
+    """
+    GIVEN a database with various memory items
+    WHEN searching by text substring or exact ID
+    THEN matching items are returned from all tables
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+        # Seed data across multiple tables
+        emb1 = _mock_embed("DuckDB is great for analytics")
+        self.fact_id, _ = db.upsert_fact(
+            self.conn, "DuckDB is great for analytics",
+            "technical", "long", "high", emb1, "sess-1", _noop_decay
+        )
+        emb2 = _mock_embed("Use PostgreSQL for prod")
+        self.decision_id, _ = db.upsert_decision(
+            self.conn, "Use PostgreSQL for prod",
+            "long", emb2, "sess-1", _noop_decay
+        )
+        emb3 = _mock_embed("Consider adding a cache layer")
+        self.idea_id, _ = db.upsert_idea(
+            self.conn, "Consider adding a cache layer",
+            "proposal", "medium", emb3, "sess-1", _noop_decay
+        )
+        self.entity_id = db.upsert_entity(self.conn, "DuckDB", "technology")
+        self.rel_id = db.upsert_relationship(
+            self.conn, "DuckDB", "Analytics", "used_for",
+            "DuckDB is used for analytics", "sess-1"
+        )
+        emb4 = _mock_embed("Should we use Redis?")
+        self.question_id, _ = db.upsert_question(
+            self.conn, "Should we use Redis?", emb4, "sess-1"
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_given_substring_when_search_then_finds_matching_facts(self):
+        results = db.search_all_by_text(self.conn, "DuckDB")
+        texts = [r["text"] for r in results]
+        self.assertTrue(any("DuckDB" in t for t in texts))
+
+    def test_given_substring_when_search_then_finds_across_tables(self):
+        results = db.search_all_by_text(self.conn, "DuckDB")
+        tables = {r["table"] for r in results}
+        # Should find in facts, entities, and relationships
+        self.assertIn("facts", tables)
+
+    def test_given_exact_id_when_search_then_finds_item(self):
+        results = db.search_all_by_id(self.conn, self.fact_id)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], self.fact_id)
+        self.assertEqual(results[0]["table"], "facts")
+
+    def test_given_decision_id_when_search_then_finds_decision(self):
+        results = db.search_all_by_id(self.conn, self.decision_id)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["table"], "decisions")
+
+    def test_given_no_match_when_search_then_returns_empty(self):
+        results = db.search_all_by_text(self.conn, "xyznonexistent")
+        self.assertEqual(len(results), 0)
+
+    def test_given_no_match_id_when_search_then_returns_empty(self):
+        results = db.search_all_by_id(self.conn, "nonexistent-id-12345")
+        self.assertEqual(len(results), 0)
+
+    def test_given_entity_name_when_search_then_finds_entity(self):
+        results = db.search_all_by_text(self.conn, "DuckDB")
+        tables = {r["table"] for r in results}
+        self.assertIn("entities", tables)
+
+    def test_given_relationship_when_search_then_finds_relationship(self):
+        results = db.search_all_by_text(self.conn, "analytics")
+        tables = {r["table"] for r in results}
+        self.assertIn("relationships", tables)
+
+    def test_given_question_when_search_then_finds_question(self):
+        results = db.search_all_by_text(self.conn, "Redis")
+        tables = {r["table"] for r in results}
+        self.assertIn("open_questions", tables)
+
+    def test_search_results_include_table_and_id(self):
+        results = db.search_all_by_text(self.conn, "PostgreSQL")
+        self.assertEqual(len(results), 1)
+        self.assertIn("id", results[0])
+        self.assertIn("table", results[0])
+        self.assertIn("text", results[0])
+
+
+class TestForgetSoftDelete(unittest.TestCase):
+    """
+    GIVEN an active memory item
+    WHEN soft_delete is called with its ID and table
+    THEN the item is marked inactive with a deactivated_at timestamp
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+        emb = _mock_embed("Fact to forget")
+        self.fact_id, _ = db.upsert_fact(
+            self.conn, "Fact to forget",
+            "contextual", "long", "high", emb, "sess-1", _noop_decay
+        )
+        emb2 = _mock_embed("Decision to forget")
+        self.decision_id, _ = db.upsert_decision(
+            self.conn, "Decision to forget",
+            "long", emb2, "sess-1", _noop_decay
+        )
+        self.entity_id = db.upsert_entity(self.conn, "ForgettableEntity", "technology")
+        emb3 = _mock_embed("Idea to forget")
+        self.idea_id, _ = db.upsert_idea(
+            self.conn, "Idea to forget",
+            "insight", "medium", emb3, "sess-1", _noop_decay
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_given_active_fact_when_soft_delete_then_inactive(self):
+        db.soft_delete(self.conn, self.fact_id, "facts")
+        row = self.conn.execute(
+            "SELECT is_active FROM facts WHERE id=?", [self.fact_id]
+        ).fetchone()
+        self.assertFalse(row[0])
+
+    def test_given_active_fact_when_soft_delete_then_deactivated_at_set(self):
+        db.soft_delete(self.conn, self.fact_id, "facts")
+        row = self.conn.execute(
+            "SELECT deactivated_at FROM facts WHERE id=?", [self.fact_id]
+        ).fetchone()
+        self.assertIsNotNone(row[0])
+
+    def test_given_soft_deleted_fact_then_not_returned_by_search(self):
+        db.soft_delete(self.conn, self.fact_id, "facts")
+        results = db.search_all_by_text(self.conn, "Fact to forget")
+        self.assertEqual(len(results), 0)
+
+    def test_given_active_decision_when_soft_delete_then_inactive(self):
+        db.soft_delete(self.conn, self.decision_id, "decisions")
+        row = self.conn.execute(
+            "SELECT is_active FROM decisions WHERE id=?", [self.decision_id]
+        ).fetchone()
+        self.assertFalse(row[0])
+
+    def test_given_active_entity_when_soft_delete_then_inactive(self):
+        db.soft_delete(self.conn, self.entity_id, "entities")
+        row = self.conn.execute(
+            "SELECT is_active FROM entities WHERE id=?", [self.entity_id]
+        ).fetchone()
+        self.assertFalse(row[0])
+
+    def test_given_active_idea_when_soft_delete_then_inactive(self):
+        db.soft_delete(self.conn, self.idea_id, "ideas")
+        row = self.conn.execute(
+            "SELECT is_active FROM ideas WHERE id=?", [self.idea_id]
+        ).fetchone()
+        self.assertFalse(row[0])
+
+    def test_given_nonexistent_id_when_soft_delete_then_returns_false(self):
+        result = db.soft_delete(self.conn, "nonexistent-id", "facts")
+        self.assertFalse(result)
+
+    def test_given_valid_id_when_soft_delete_then_returns_true(self):
+        result = db.soft_delete(self.conn, self.fact_id, "facts")
+        self.assertTrue(result)
+
+
+class TestForgetHardPurge(unittest.TestCase):
+    """
+    GIVEN soft-deleted items with deactivated_at timestamps
+    WHEN purge_deleted is called with a 30-day threshold
+    THEN items deleted more than 30 days ago are hard-deleted
+    AND items deleted less than 30 days ago are preserved
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+
+        # Create and soft-delete a fact, then backdate deactivated_at
+        emb = _mock_embed("Old forgotten fact")
+        self.old_fact_id, _ = db.upsert_fact(
+            self.conn, "Old forgotten fact",
+            "contextual", "short", "low", emb, "sess-1", _noop_decay
+        )
+        db.soft_delete(self.conn, self.old_fact_id, "facts")
+        # Backdate deactivated_at to 45 days ago
+        old_date = datetime.now(timezone.utc) - timedelta(days=45)
+        self.conn.execute(
+            "UPDATE facts SET deactivated_at=? WHERE id=?",
+            [old_date, self.old_fact_id]
+        )
+
+        # Create and soft-delete a recent fact (5 days ago)
+        emb2 = _mock_embed("Recent forgotten fact")
+        self.recent_fact_id, _ = db.upsert_fact(
+            self.conn, "Recent forgotten fact",
+            "contextual", "short", "low", emb2, "sess-1", _noop_decay
+        )
+        db.soft_delete(self.conn, self.recent_fact_id, "facts")
+        recent_date = datetime.now(timezone.utc) - timedelta(days=5)
+        self.conn.execute(
+            "UPDATE facts SET deactivated_at=? WHERE id=?",
+            [recent_date, self.recent_fact_id]
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_given_old_deleted_fact_when_purge_then_hard_deleted(self):
+        db.purge_deleted(self.conn, max_age_days=30)
+        row = self.conn.execute(
+            "SELECT id FROM facts WHERE id=?", [self.old_fact_id]
+        ).fetchone()
+        self.assertIsNone(row)
+
+    def test_given_recent_deleted_fact_when_purge_then_preserved(self):
+        db.purge_deleted(self.conn, max_age_days=30)
+        row = self.conn.execute(
+            "SELECT id FROM facts WHERE id=?", [self.recent_fact_id]
+        ).fetchone()
+        self.assertIsNotNone(row)
+
+    def test_given_mixed_ages_when_purge_then_returns_correct_count(self):
+        stats = db.purge_deleted(self.conn, max_age_days=30)
+        self.assertEqual(stats["purged"], 1)
+
+
+class TestSchemaMigration3(unittest.TestCase):
+    """
+    GIVEN a database after migration 3
+    WHEN checking schema
+    THEN deactivated_at column exists on relevant tables
+    AND entities table has is_active column
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_facts_has_deactivated_at_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='facts'"
+        ).fetchall()}
+        self.assertIn("deactivated_at", cols)
+
+    def test_ideas_has_deactivated_at_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='ideas'"
+        ).fetchall()}
+        self.assertIn("deactivated_at", cols)
+
+    def test_decisions_has_deactivated_at_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='decisions'"
+        ).fetchall()}
+        self.assertIn("deactivated_at", cols)
+
+    def test_entities_has_is_active_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='entities'"
+        ).fetchall()}
+        self.assertIn("is_active", cols)
+
+    def test_entities_has_deactivated_at_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='entities'"
+        ).fetchall()}
+        self.assertIn("deactivated_at", cols)
+
+    def test_relationships_has_deactivated_at_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='relationships'"
+        ).fetchall()}
+        self.assertIn("deactivated_at", cols)
+
+    def test_open_questions_has_deactivated_at_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='open_questions'"
+        ).fetchall()}
+        self.assertIn("deactivated_at", cols)
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

@@ -54,11 +54,22 @@ echo "ok Memory package installed"
 echo ""
 echo "-> Installing hooks to ${HOOKS_DIR}/ ..."
 mkdir -p "$HOOKS_DIR"
-for hook in pre_compact session_start session_end user_prompt_submit status_line _extract_worker; do
+for hook in pre_compact session_start session_end user_prompt_submit status_line _extract_worker remember_cmd forget_cmd; do
   cp "$SCRIPT_DIR/hooks/${hook}.py" "${HOOKS_DIR}/${hook}.py"
   chmod +x "${HOOKS_DIR}/${hook}.py"
   echo "  ok ${hook}.py"
 done
+
+# ── Install custom slash commands ─────────────────────────────────────────
+echo ""
+echo "-> Installing slash commands to ~/.claude/commands/ ..."
+mkdir -p "$HOME/.claude/commands"
+cp "$SCRIPT_DIR/commands/remember.md" "$HOME/.claude/commands/remember.md"
+echo "  ok remember.md"
+cp "$SCRIPT_DIR/commands/forget.md" "$HOME/.claude/commands/forget.md"
+echo "  ok forget.md"
+cp "$SCRIPT_DIR/commands/forget-confirm.md" "$HOME/.claude/commands/forget-confirm.md"
+echo "  ok forget-confirm.md"
 
 # ── Create locks directory ────────────────────────────────────────────────
 mkdir -p "$HOME/.claude/memory/locks"
@@ -147,6 +158,13 @@ echo "    PreCompact       -> extract knowledge before compaction"
 echo "    SessionStart     -> inject long/medium memory as context"
 echo "    SessionEnd       -> extract knowledge on session exit (background)"
 echo "    UserPromptSubmit -> recall relevant facts per prompt"
+echo ""
+echo "  Slash commands:"
+echo "    /remember <text>                  -> store long-term fact"
+echo "    /remember global: <text>          -> global fact"
+echo "    /remember decision: <text>        -> decision"
+echo "    /remember global decision: <text> -> global decision"
+echo "    /forget <search text>             -> search and forget memories"
 echo ""
 echo "  Status line:"
 echo "    Monitors context window usage"

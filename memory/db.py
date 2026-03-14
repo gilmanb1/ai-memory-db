@@ -152,6 +152,17 @@ MIGRATIONS: list[tuple[int, str, str]] = [
             PRIMARY KEY (item_id, item_table, scope)
         );
     """),
+    (3, "Add deactivated_at columns and entities is_active for /forget support", """
+        ALTER TABLE facts ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
+        ALTER TABLE ideas ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
+        ALTER TABLE decisions ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
+        ALTER TABLE relationships ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
+        ALTER TABLE open_questions ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
+        DROP INDEX IF EXISTS entities_name_lower;
+        ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+        ALTER TABLE entities ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
+        CREATE UNIQUE INDEX IF NOT EXISTS entities_name_lower ON entities(name_lower);
+    """),
 ]
 
 
@@ -885,6 +896,130 @@ def apply_decay_pass(conn: duckdb.DuckDBPyConnection) -> dict:
 
 
 # ── Database statistics ────────────────────────────────────────────────────
+
+# ── Forget (search, soft-delete, purge) ───────────────────────────────────
+
+# Tables that have a 'text' column and support soft-delete
+_TEXT_TABLES = {
+    "facts":          "text",
+    "ideas":          "text",
+    "decisions":      "text",
+    "open_questions": "text",
+}
+
+# Tables where the display text comes from a different column
+_OTHER_TABLES = {
+    "entities":      "name",
+    "relationships": "description",
+}
+
+_ALL_FORGET_TABLES = {**_TEXT_TABLES, **_OTHER_TABLES}
+
+
+def search_all_by_text(
+    conn: duckdb.DuckDBPyConnection,
+    query: str,
+    scope: Optional[str] = None,
+) -> list[dict]:
+    """Search all tables for items whose text/name/description contains query (case-insensitive)."""
+    results: list[dict] = []
+    query_lower = query.lower()
+
+    for table, col in _ALL_FORGET_TABLES.items():
+        active_filter = "is_active = TRUE AND" if table != "entities" else (
+            "is_active = TRUE AND" if "is_active" in _get_columns(conn, table) else ""
+        )
+        # After migration 3, entities always has is_active
+        try:
+            active_clause = "is_active = TRUE AND " if table in ("facts", "ideas", "decisions", "relationships", "open_questions", "entities") else ""
+            scope_filter = _scope_filter(scope) if scope else ""
+            rows = conn.execute(f"""
+                SELECT id, {col} FROM {table}
+                WHERE {active_clause}LOWER({col}) LIKE ?
+                {scope_filter}
+            """, [f"%{query_lower}%"]).fetchall()
+            for row in rows:
+                results.append({"id": row[0], "text": row[1], "table": table})
+        except Exception:
+            pass
+
+    return results
+
+
+def search_all_by_id(
+    conn: duckdb.DuckDBPyConnection,
+    item_id: str,
+) -> list[dict]:
+    """Search all tables for an item with the exact ID."""
+    results: list[dict] = []
+
+    for table, col in _ALL_FORGET_TABLES.items():
+        try:
+            row = conn.execute(
+                f"SELECT id, {col} FROM {table} WHERE id = ?", [item_id]
+            ).fetchone()
+            if row:
+                results.append({"id": row[0], "text": row[1], "table": table})
+        except Exception:
+            pass
+
+    return results
+
+
+def soft_delete(
+    conn: duckdb.DuckDBPyConnection,
+    item_id: str,
+    table: str,
+) -> bool:
+    """Mark an item as inactive and set deactivated_at. Returns True if found."""
+    if table not in _ALL_FORGET_TABLES:
+        return False
+
+    row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", [item_id]).fetchone()
+    if not row:
+        return False
+
+    now = _now()
+    conn.execute(
+        f"UPDATE {table} SET is_active = FALSE, deactivated_at = ? WHERE id = ?",
+        [now, item_id],
+    )
+    return True
+
+
+def purge_deleted(
+    conn: duckdb.DuckDBPyConnection,
+    max_age_days: int = 30,
+) -> dict:
+    """Hard-delete items that were soft-deleted more than max_age_days ago."""
+    cutoff = _now() - __import__("datetime").timedelta(days=max_age_days)
+    stats = {"purged": 0}
+
+    for table in _ALL_FORGET_TABLES:
+        try:
+            result = conn.execute(
+                f"DELETE FROM {table} WHERE is_active = FALSE AND deactivated_at IS NOT NULL AND deactivated_at < ?",
+                [cutoff],
+            )
+            stats["purged"] += result.fetchone()[0] if result.description else 0
+        except Exception:
+            # Count via separate query
+            try:
+                before = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE is_active = FALSE AND deactivated_at IS NOT NULL AND deactivated_at < ?", [cutoff]).fetchone()[0]
+                conn.execute(f"DELETE FROM {table} WHERE is_active = FALSE AND deactivated_at IS NOT NULL AND deactivated_at < ?", [cutoff])
+                stats["purged"] += before
+            except Exception:
+                pass
+
+    return stats
+
+
+def _get_columns(conn: duckdb.DuckDBPyConnection, table: str) -> set[str]:
+    """Get column names for a table."""
+    return {r[0] for r in conn.execute(
+        f"SELECT column_name FROM information_schema.columns WHERE table_name='{table}'"
+    ).fetchall()}
+
 
 def get_stats(conn: duckdb.DuckDBPyConnection) -> dict:
     def count(table, where="is_active = TRUE"):

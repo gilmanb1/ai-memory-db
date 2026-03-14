@@ -172,7 +172,7 @@ hooks/                      Claude Code hook scripts (installed to ~/.claude/hoo
   status_line.py              Status line: trigger extraction at 90% context
   _extract_worker.py          Background extraction worker
 
-test_memory.py              78 tests (BDD-style for scoping, unit for core)
+test_memory.py              100 tests (BDD-style, red/green methodology)
 install.sh                  Installer script
 ```
 
@@ -226,7 +226,7 @@ Migrations run once on the next `get_connection()` call and are recorded in `sch
 python3 test_memory.py
 ```
 
-78 tests against real DuckDB instances. No Ollama or Anthropic API required — embeddings are mocked with deterministic hash-based vectors. Scoping tests use BDD-style `given_when_then` naming.
+100 tests against real DuckDB instances. No Ollama or Anthropic API required — embeddings are mocked with deterministic hash-based vectors. Tests use BDD-style `given_when_then` naming and red/green methodology.
 
 ## Graceful Degradation
 

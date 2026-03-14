@@ -12,6 +12,7 @@ import json
 import math
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -1082,6 +1083,237 @@ class TestRememberCommand(unittest.TestCase):
         output = self._run_remember("/remember")
         parsed = json.loads(output)
         self.assertIn("Usage", parsed["additionalContext"])
+
+
+class TestTokenBudgetTruncation(unittest.TestCase):
+    """
+    GIVEN more facts than can fit within the token budget
+    WHEN formatting session or prompt context
+    THEN the output is truncated and stays within budget
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+        # Insert many long facts to exceed the session token budget
+        for i in range(200):
+            text = f"Long-term fact number {i}: " + "x" * 100  # ~120 chars each
+            emb = _mock_embed(f"budget_test_fact_{i}_" + "y" * 50)
+            db.upsert_fact(self.conn, text, "technical", "long", "high",
+                           emb, "sess-1", _noop_decay)
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_given_200_long_facts_when_format_session_then_stays_within_budget(self):
+        ctx = recall.session_recall(self.conn)
+        formatted = recall.format_session_context(ctx)
+        estimated_tokens = len(formatted) // _cfg.CHARS_PER_TOKEN
+        self.assertLessEqual(estimated_tokens, _cfg.SESSION_TOKEN_BUDGET + 50)  # small margin for truncation message
+
+    def test_given_200_long_facts_when_budget_is_small_then_contains_truncation_notice(self):
+        with patch.object(recall, "SESSION_TOKEN_BUDGET", 200):
+            ctx = recall.session_recall(self.conn)
+            formatted = recall.format_session_context(ctx)
+            self.assertIn("truncated", formatted)
+
+    def test_given_many_search_results_when_format_prompt_then_stays_within_budget(self):
+        query_emb = _mock_embed("budget_test_fact_0_" + "y" * 50)
+        ctx = recall.prompt_recall(self.conn, query_emb, "Tell me all the facts")
+        formatted = recall.format_prompt_context(ctx)
+        estimated_tokens = len(formatted) // _cfg.CHARS_PER_TOKEN
+        self.assertLessEqual(estimated_tokens, _cfg.PROMPT_TOKEN_BUDGET + 50)
+
+
+class TestIngestionLock(_ScopedTestBase):
+    """
+    GIVEN the session lock mechanism in ingest.py
+    WHEN acquiring, releasing, and cleaning up locks
+    THEN only one extraction runs per session and stale locks are cleaned
+    """
+
+    def test_given_no_lock_when_acquire_then_returns_true(self):
+        from memory.ingest import acquire_lock, LOCK_DIR
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        result = acquire_lock("test-session-lock-1")
+        self.assertTrue(result)
+        # Cleanup
+        from memory.ingest import release_lock
+        release_lock("test-session-lock-1")
+
+    def test_given_lock_exists_when_acquire_again_then_returns_false(self):
+        from memory.ingest import acquire_lock, release_lock
+        acquire_lock("test-session-lock-2")
+        result = acquire_lock("test-session-lock-2")
+        self.assertFalse(result)
+        release_lock("test-session-lock-2")
+
+    def test_given_lock_exists_when_released_then_can_reacquire(self):
+        from memory.ingest import acquire_lock, release_lock
+        acquire_lock("test-session-lock-3")
+        release_lock("test-session-lock-3")
+        result = acquire_lock("test-session-lock-3")
+        self.assertTrue(result)
+        release_lock("test-session-lock-3")
+
+    def test_given_old_lock_when_cleanup_then_removed(self):
+        from memory.ingest import acquire_lock, cleanup_old_locks, _lock_path, LOCK_DIR
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        acquire_lock("test-session-old-lock")
+        lock_file = _lock_path("test-session-old-lock")
+        # Backdate the file modification time by 48 hours
+        import os
+        old_time = time.time() - (48 * 3600)
+        os.utime(str(lock_file), (old_time, old_time))
+        cleanup_old_locks(max_age_hours=24)
+        self.assertFalse(lock_file.exists())
+
+    def test_given_fresh_lock_when_cleanup_then_not_removed(self):
+        from memory.ingest import acquire_lock, cleanup_old_locks, _lock_path
+        acquire_lock("test-session-fresh-lock")
+        lock_file = _lock_path("test-session-fresh-lock")
+        cleanup_old_locks(max_age_hours=24)
+        self.assertTrue(lock_file.exists())
+        from memory.ingest import release_lock
+        release_lock("test-session-fresh-lock")
+
+
+class TestScopeFilterSQL(unittest.TestCase):
+    """
+    GIVEN the _scope_filter helper
+    WHEN called with different scope values
+    THEN the correct SQL WHERE fragment is generated
+    """
+
+    def test_given_none_scope_then_returns_empty_string(self):
+        result = db._scope_filter(None)
+        self.assertEqual(result, "")
+
+    def test_given_project_scope_then_returns_project_or_global_filter(self):
+        result = db._scope_filter("/Users/dev/projects/alpha")
+        self.assertIn("/Users/dev/projects/alpha", result)
+        self.assertIn("__global__", result)
+        self.assertIn("OR", result)
+
+    def test_given_global_scope_then_returns_global_or_global_filter(self):
+        result = db._scope_filter("__global__")
+        self.assertIn("__global__", result)
+
+    def test_given_scope_with_quotes_then_quotes_are_escaped(self):
+        result = db._scope_filter("/Users/o'brien/projects/test")
+        self.assertIn("o''brien", result)
+        self.assertNotIn("o'brien", result.replace("o''brien", ""))
+
+
+class TestEmbeddingsWarnOnce(unittest.TestCase):
+    """
+    GIVEN Ollama is unreachable
+    WHEN embedding multiple texts
+    THEN only the first failure prints a warning (warn-once pattern)
+    """
+
+    def test_given_ollama_down_when_embed_twice_then_warns_once(self):
+        import io
+        from contextlib import redirect_stderr
+
+        # Reset the warn-once state
+        embeddings._warned_once = False
+
+        stderr_buf = io.StringIO()
+        with patch("memory.embeddings.urllib.request.urlopen", side_effect=Exception("connection refused")):
+            with redirect_stderr(stderr_buf):
+                result1 = embeddings.embed("first text")
+                result2 = embeddings.embed("second text")
+
+        self.assertIsNone(result1)
+        self.assertIsNone(result2)
+        warnings = stderr_buf.getvalue()
+        # Should contain exactly one warning line
+        warning_lines = [l for l in warnings.strip().split("\n") if l.strip()]
+        self.assertEqual(len(warning_lines), 1)
+
+        # Reset state for other tests
+        embeddings._warned_once = False
+
+
+class TestRememberCaseInsensitive(unittest.TestCase):
+    """
+    GIVEN /remember with various capitalizations
+    WHEN the UserPromptSubmit hook processes the prompt
+    THEN the command is recognized regardless of case
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        _cfg.DB_PATH = self.db_path
+
+    def tearDown(self):
+        _cfg.DB_PATH = Path(tempfile.mktemp(suffix=".duckdb"))
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def _load_hook_module(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "user_prompt_submit",
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_uppercase_remember_then_recognized(self, mock_emb):
+        mod = self._load_hook_module()
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        payload = {"prompt": "/REMEMBER uppercase test", "cwd": "/tmp", "session_id": "test"}
+        stdout_buf = io.StringIO()
+        with redirect_stdout(stdout_buf), redirect_stderr(io.StringIO()):
+            mod._handle_remember("/REMEMBER uppercase test", payload)
+        output = stdout_buf.getvalue()
+        parsed = json.loads(output)
+        self.assertIn("Stored", parsed["additionalContext"])
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_mixed_case_remember_then_recognized(self, mock_emb):
+        mod = self._load_hook_module()
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        payload = {"prompt": "/Remember mixed case test", "cwd": "/tmp", "session_id": "test"}
+        stdout_buf = io.StringIO()
+        with redirect_stdout(stdout_buf), redirect_stderr(io.StringIO()):
+            mod._handle_remember("/Remember mixed case test", payload)
+        output = stdout_buf.getvalue()
+        parsed = json.loads(output)
+        self.assertIn("Stored", parsed["additionalContext"])
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_decision_global_reversed_prefix_then_recognized(self, mock_emb):
+        mod = self._load_hook_module()
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        payload = {"prompt": "/remember decision global: Reversed prefix order", "cwd": "/tmp", "session_id": "test"}
+        stdout_buf = io.StringIO()
+        with redirect_stdout(stdout_buf), redirect_stderr(io.StringIO()):
+            mod._handle_remember("/remember decision global: Reversed prefix order", payload)
+        output = stdout_buf.getvalue()
+        parsed = json.loads(output)
+        self.assertIn("decision", parsed["additionalContext"])
+        self.assertIn("global", parsed["additionalContext"])
+
+        conn = db.get_connection(db_path=str(self.db_path))
+        row = conn.execute("SELECT scope FROM decisions WHERE text='Reversed prefix order'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], _cfg.GLOBAL_SCOPE)
+        conn.close()
 
 
 if __name__ == "__main__":

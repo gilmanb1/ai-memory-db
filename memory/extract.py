@@ -13,7 +13,11 @@ from typing import Any
 
 import anthropic
 
-from .config import CLAUDE_MODEL, EXTRACT_MAX_TOKENS, MAX_TRANSCRIPT_CHARS
+from .config import (
+    CLAUDE_MODEL, EXTRACT_MAX_TOKENS, MAX_TRANSCRIPT_CHARS,
+    DELTA_MIN_USER_MESSAGES, DELTA_MIN_USER_CHARS,
+)
+from typing import Optional
 
 # ── Extraction tool schema ────────────────────────────────────────────────
 
@@ -254,3 +258,230 @@ def extract_knowledge(conversation_text: str, api_key: str) -> dict:
             return block.input
 
     raise ValueError("Claude did not return a store_knowledge tool_use block")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Incremental extraction — delta parsing, tool schema, prompts
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Delta parsing ────────────────────────────────────────────────────────
+
+def parse_transcript_delta(
+    path: str,
+    byte_offset: int = 0,
+) -> tuple[list[dict], int]:
+    """
+    Parse a JSONL transcript starting from byte_offset.
+
+    Returns (messages, new_byte_offset) where new_byte_offset is the
+    file position after the last line read — use it for the next delta.
+
+    When byte_offset=0, equivalent to parse_transcript but also returns offset.
+    """
+    messages: list[dict] = []
+    new_offset = byte_offset
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(byte_offset)
+            while True:
+                raw = fh.readline()
+                if not raw:
+                    break
+                new_offset = fh.tell()
+                raw_str = raw.decode("utf-8", errors="replace").strip()
+                if not raw_str:
+                    continue
+                try:
+                    entry = json.loads(raw_str)
+                except json.JSONDecodeError:
+                    continue
+                msg = entry.get("message", {})
+                role = msg.get("role", "")
+                if role not in ("user", "assistant"):
+                    continue
+                text = _content_to_text(msg.get("content", ""))
+                if text:
+                    messages.append({
+                        "role": role,
+                        "text": text,
+                        "timestamp": entry.get("timestamp", ""),
+                    })
+    except OSError:
+        pass
+    return messages, new_offset
+
+
+def is_delta_substantial(
+    messages: list[dict],
+    min_user_msgs: int = DELTA_MIN_USER_MESSAGES,
+    min_user_chars: int = DELTA_MIN_USER_CHARS,
+) -> bool:
+    """
+    Check if a delta has enough substantive user content to warrant extraction.
+
+    Returns False for tool-heavy deltas with little user input.
+    This prevents wasted API calls on deltas that are mostly code/tool output.
+    """
+    user_messages = [m for m in messages if m["role"] == "user"]
+    user_chars = sum(len(m["text"]) for m in user_messages)
+    return len(user_messages) >= min_user_msgs or user_chars >= min_user_chars
+
+
+# ── Incremental extraction tool schema ───────────────────────────────────
+
+INCREMENTAL_EXTRACTION_TOOL = {
+    "name": "store_incremental_knowledge",
+    "description": "Store extracted knowledge from a conversation segment, with ability to supersede outdated items.",
+    "input_schema": {
+        "type": "object",
+        "required": [
+            "narrative_summary", "facts", "ideas", "relationships",
+            "key_decisions", "open_questions", "entities", "supersedes",
+        ],
+        "properties": {
+            "narrative_summary": {
+                "type": "string",
+                "description": (
+                    "Cumulative 3-6 sentence narrative summary of the ENTIRE conversation so far "
+                    "(not just this segment). Must be self-contained — a reader with no other "
+                    "context should understand the conversation's purpose and key outcomes."
+                ),
+            },
+            # Same structured fields as EXTRACTION_TOOL
+            "facts": EXTRACTION_TOOL["input_schema"]["properties"]["facts"],
+            "ideas": EXTRACTION_TOOL["input_schema"]["properties"]["ideas"],
+            "relationships": EXTRACTION_TOOL["input_schema"]["properties"]["relationships"],
+            "key_decisions": EXTRACTION_TOOL["input_schema"]["properties"]["key_decisions"],
+            "open_questions": EXTRACTION_TOOL["input_schema"]["properties"]["open_questions"],
+            "entities": EXTRACTION_TOOL["input_schema"]["properties"]["entities"],
+            # New: superseding
+            "supersedes": {
+                "type": "array",
+                "description": (
+                    "IDs of existing items that are NOW OUTDATED because the new conversation "
+                    "segment explicitly contradicts, reverses, or replaces them. "
+                    "Only include an ID if a new item in YOUR response fully replaces it."
+                ),
+                "items": {
+                    "type": "object",
+                    "required": ["old_id", "old_table", "reason"],
+                    "properties": {
+                        "old_id": {
+                            "type": "string",
+                            "description": "The UUID of the item being replaced.",
+                        },
+                        "old_table": {
+                            "type": "string",
+                            "enum": ["facts", "ideas", "decisions", "open_questions"],
+                            "description": "Which table the old item lives in.",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Why this item is outdated (1 sentence).",
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+
+# ── Incremental extraction prompts ───────────────────────────────────────
+
+_INCREMENTAL_SYSTEM = SYSTEM_PROMPT + textwrap.dedent("""\
+
+    INCREMENTAL EXTRACTION RULES:
+    You are processing a SEGMENT of an ongoing conversation, not the full transcript.
+
+    - Extract only NEW knowledge from the segment below.
+    - Do NOT re-extract items listed under PRIOR PASS ITEMS — they are already stored.
+    - If the conversation contradicts or updates any EXISTING DATABASE ITEMS, include
+      their IDs in the supersedes array. When superseding, the replacement item in your
+      facts/decisions/ideas must capture the FULL updated state, not just the delta.
+    - Only mark items as superseded if the conversation EXPLICITLY contradicts or
+      replaces them. Do not supersede items merely because they are related.
+    - Your narrative_summary must cover everything in the conversation so far,
+      not just this segment. It must be self-contained.
+""")
+
+
+def _build_incremental_user_message(
+    delta_text: str,
+    prior_narrative: Optional[str] = None,
+    existing_items: Optional[list[dict]] = None,
+    prior_items: Optional[list[dict]] = None,
+) -> str:
+    """Build the user message for incremental extraction."""
+    parts: list[str] = []
+
+    # Existing DB items (for superseding)
+    if existing_items:
+        parts.append("EXISTING DATABASE ITEMS (reference by ID if any are now outdated):")
+        for item in existing_items:
+            table_prefix = item["table"][:3]  # "fac", "ide", "dec", etc.
+            parts.append(f"[{table_prefix}-{item['id']}] {item['text']}")
+        parts.append("")
+
+    # Prior pass items (don't re-extract)
+    if prior_items:
+        parts.append("PRIOR PASS ITEMS (already stored this session — do NOT re-extract):")
+        for item in prior_items:
+            table_prefix = item["table"][:3]
+            parts.append(f"[{table_prefix}-{item['id']}] {item['text']}")
+        parts.append("")
+
+    # Prior narrative
+    if prior_narrative:
+        parts.append("PRIOR NARRATIVE (from earlier in this session — update, don't restart):")
+        parts.append(prior_narrative)
+        parts.append("")
+
+    parts.append("--- NEW CONVERSATION SEGMENT ---")
+    parts.append(delta_text)
+
+    return "\n".join(parts)
+
+
+def extract_knowledge_incremental(
+    delta_text: str,
+    api_key: str,
+    prior_narrative: Optional[str] = None,
+    existing_items: Optional[list[dict]] = None,
+    prior_items: Optional[list[dict]] = None,
+) -> dict:
+    """
+    Call Claude to extract knowledge from a conversation delta (segment).
+
+    Unlike extract_knowledge which processes the full transcript,
+    this function:
+      - Receives only the new conversation since the last extraction pass
+      - Receives context about what was already extracted (prior_items)
+      - Receives relevant existing DB items (for cross-session superseding)
+      - Receives the prior narrative to update (for cumulative summaries)
+
+    Returns the parsed knowledge dict (same structure as extract_knowledge
+    but with additional 'narrative_summary' and 'supersedes' fields).
+    """
+    user_message = _build_incremental_user_message(
+        delta_text=delta_text,
+        prior_narrative=prior_narrative,
+        existing_items=existing_items,
+        prior_items=prior_items,
+    )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=EXTRACT_MAX_TOKENS,
+        system=_INCREMENTAL_SYSTEM,
+        messages=[{"role": "user", "content": user_message}],
+        tools=[INCREMENTAL_EXTRACTION_TOOL],
+        tool_choice={"type": "tool", "name": "store_incremental_knowledge"},
+    )
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "store_incremental_knowledge":
+            return block.input
+
+    raise ValueError("Claude did not return a store_incremental_knowledge tool_use block")

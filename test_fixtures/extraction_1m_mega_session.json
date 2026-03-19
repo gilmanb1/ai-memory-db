@@ -1,0 +1,360 @@
+{
+  "session_summary": "A deep exploration of a fintech application's codebase covering its full technology stack, architecture, security, compliance, and infrastructure. Key topics included authentication (JWT), payment processing (Stripe), database design (PostgreSQL), local development tooling, observability (OpenTelemetry), async task processing (Celery), identity verification (Plaid), and fraud detection. Several architectural decisions were explicitly ratified, and two prior approaches were superseded (Redis for session caching replaced by Memcached, Docker Compose for local dev replaced by Tilt).",
+  "facts": [
+    {
+      "text": "The project is a fintech application with a database named 'fintech'.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "FastAPI serves the REST API endpoints on port 8000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "PostgreSQL 16 (postgres:16-alpine) is the primary database, chosen over MySQL for ACID compliance.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Tilt replaces Docker Compose for local development (superseding Docker Compose due to faster iteration).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Production environment runs on AWS ECS Fargate with auto-scaling.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT is used for stateless authentication (HS256 algorithm) with a 24-hour token expiry.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "AuthMiddleware is a FastAPI middleware that decodes JWT tokens and injects user_id into request state; returns 401 on ExpiredSignatureError.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Memcached replaces Redis for session caching due to licensing concerns (superseding prior Redis-based session caching).",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Redis 7 (redis:7-alpine) is still part of the stack (likely for other purposes such as Celery broker), configured with 256mb maxmemory and allkeys-lru policy.",
+      "category": "technical",
+      "confidence": "medium",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe handles payment processing via webhooks.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Plaid is used for KYC identity verification.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Celery workers handle asynchronous transaction reconciliation.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Two-factor authentication (2FA) is mandatory for transfers over $10,000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Idempotency keys (VARCHAR 64, UNIQUE) are stored on transactions to prevent duplicate payment processing.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Account balances and transaction amounts are stored as integer cents (BIGINT) to avoid floating-point rounding errors.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "API uses cursor-based pagination instead of offset/limit for consistency and reliability.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Error responses follow RFC 7807 Problem Details format.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Request tracing uses OpenTelemetry with W3C trace context headers.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The fraud detection model runs in a sidecar container.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Rate limiting is set to 100 requests per minute per user.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Webhook retries use exponential backoff with a maximum of 5 attempts.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Compliance team requires audit logs for all financial transactions.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "SOC 2 Type II audit is completed annually in Q4.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Integration tests use testcontainers for PostgreSQL and Redis.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The frontend uses React Query (@tanstack/react-query) with useTransactions (staleTime 30s, refetchOnWindowFocus) and useTransfer (invalidates transactions and balance queries on success).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table has indexes: idx_transactions_source on (source_account_id, created_at DESC) and a partial index idx_transactions_status on status WHERE status != 'settled'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table schema uses UUID primary keys generated via gen_random_uuid(), currency defaults to 'USD' (VARCHAR 3), status defaults to 'pending', and includes a JSONB metadata column.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The process_transaction function validates amount > 0, checks currency against SUPPORTED_CURRENCIES, creates a LedgerEntry, and commits to db.session.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The docker-compose environment passes DATABASE_URL, REDIS_URL, and STRIPE_SECRET_KEY (from environment variable) to the API service.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Replacing Redis with Memcached for session caching may require audit of all existing Redis session usage patterns to ensure nothing breaks.",
+      "type": "concern",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Replacing Docker Compose with Tilt for local dev will require team onboarding and updated developer documentation.",
+      "type": "concern",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "The partial index on transactions status (WHERE status != 'settled') is an efficient pattern for fintech workloads where most queries target unsettled transactions.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Running the fraud detection model in a sidecar container keeps ML inference co-located with transaction processing for low-latency scoring.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Using idempotency keys at the database level (UNIQUE constraint) provides a strong, race-condition-safe deduplication guarantee for payments.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Cursor-based pagination chosen over offset/limit provides stable results during concurrent inserts, which is critical for financial transaction feeds.",
+      "type": "insight",
+      "temporal_class": "long"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "PostgreSQL",
+      "type": "uses",
+      "description": "FastAPI API layer uses PostgreSQL as its primary relational database via SQLAlchemy."
+    },
+    {
+      "from": "FastAPI",
+      "to": "AuthMiddleware",
+      "type": "uses",
+      "description": "FastAPI uses AuthMiddleware to enforce JWT authentication on all requests."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "JWT",
+      "type": "uses",
+      "description": "AuthMiddleware decodes and validates JWT tokens with HS256 algorithm and 24-hour expiry."
+    },
+    {
+      "from": "Memcached",
+      "to": "Redis",
+      "type": "replaces",
+      "description": "Memcached replaces Redis for session token caching due to licensing concerns."
+    },
+    {
+      "from": "Tilt",
+      "to": "Docker Compose",
+      "type": "replaces",
+      "description": "Tilt replaces Docker Compose for local development for faster iteration."
+    },
+    {
+      "from": "Celery",
+      "to": "Redis",
+      "type": "uses",
+      "description": "Celery workers likely use Redis as a message broker for async task processing."
+    },
+    {
+      "from": "Stripe",
+      "to": "fintech application",
+      "type": "enables",
+      "description": "Stripe enables payment processing via webhooks in the fintech application."
+    },
+    {
+      "from": "Plaid",
+      "to": "KYC flow",
+      "type": "enables",
+      "description": "Plaid enables identity verification as part of the KYC onboarding flow."
+    },
+    {
+      "from": "OpenTelemetry",
+      "to": "request tracing",
+      "type": "enables",
+      "description": "OpenTelemetry enables distributed request tracing using W3C trace context headers."
+    },
+    {
+      "from": "fraud detection model",
+      "to": "transaction processing",
+      "type": "part_of",
+      "description": "The fraud detection model runs as a sidecar container alongside transaction processing."
+    },
+    {
+      "from": "AWS ECS Fargate",
+      "to": "fintech application",
+      "type": "enables",
+      "description": "AWS ECS Fargate with auto-scaling hosts the production fintech application."
+    },
+    {
+      "from": "idempotency key",
+      "to": "duplicate payment prevention",
+      "type": "enables",
+      "description": "Idempotency keys stored as UNIQUE in the transactions table prevent duplicate payment processing."
+    },
+    {
+      "from": "testcontainers",
+      "to": "integration tests",
+      "type": "enables",
+      "description": "Testcontainers spins up PostgreSQL and Redis instances for integration testing."
+    },
+    {
+      "from": "React Query",
+      "to": "frontend transactions",
+      "type": "enables",
+      "description": "React Query manages frontend data fetching and cache invalidation for transactions and balances."
+    },
+    {
+      "from": "2FA",
+      "to": "high-value transfers",
+      "type": "defined_by",
+      "description": "Two-factor authentication is mandatorily triggered for transfers exceeding $10,000."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Use PostgreSQL over MySQL for ACID compliance.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use JWT over session cookies for stateless authentication.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Store all monetary amounts as integer cents, not floats.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use cursor-based pagination for consistency and reliability.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Follow RFC 7807 Problem Details format for all error responses.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Replace Redis with Memcached for session caching due to licensing concerns.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Replace Docker Compose with Tilt for faster local development iteration.",
+      "temporal_class": "long"
+    }
+  ],
+  "open_questions": [
+    "What specific Redis licensing concern drove the switch to Memcached \u2014 SSPL or another license change?",
+    "Is Redis still in the stack solely as a Celery broker, or does it serve additional purposes after the Memcached migration?",
+    "What currencies are included in SUPPORTED_CURRENCIES for transaction validation?",
+    "How are audit logs for financial transactions structured and stored (separate table, append-only log, external service)?",
+    "What observability backend receives the OpenTelemetry traces (e.g., Jaeger, Datadog, AWS X-Ray)?"
+  ],
+  "entities": [
+    "FastAPI",
+    "PostgreSQL",
+    "Redis",
+    "Memcached",
+    "Tilt",
+    "Docker Compose",
+    "AWS ECS Fargate",
+    "Stripe",
+    "Plaid",
+    "Celery",
+    "JWT",
+    "OpenTelemetry",
+    "SQLAlchemy",
+    "React Query",
+    "AuthMiddleware",
+    "testcontainers",
+    "fintech application",
+    "fraud detection sidecar"
+  ]
+}

@@ -163,6 +163,27 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE entities ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP;
         CREATE UNIQUE INDEX IF NOT EXISTS entities_name_lower ON entities(name_lower);
     """),
+    (4, "Add session_narratives table and superseded_by columns", """
+        CREATE TABLE IF NOT EXISTS session_narratives (
+            id              VARCHAR PRIMARY KEY,
+            session_id      VARCHAR NOT NULL,
+            pass_number     INTEGER NOT NULL,
+            narrative       TEXT NOT NULL,
+            embedding       DOUBLE[],
+            is_final        BOOLEAN DEFAULT FALSE,
+            is_active       BOOLEAN DEFAULT TRUE,
+            scope           VARCHAR DEFAULT '__global__',
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS narratives_session ON session_narratives(session_id);
+        CREATE INDEX IF NOT EXISTS narratives_final ON session_narratives(is_final);
+
+        ALTER TABLE facts ADD COLUMN IF NOT EXISTS superseded_by VARCHAR;
+        ALTER TABLE ideas ADD COLUMN IF NOT EXISTS superseded_by VARCHAR;
+        ALTER TABLE decisions ADD COLUMN IF NOT EXISTS superseded_by VARCHAR;
+        ALTER TABLE open_questions ADD COLUMN IF NOT EXISTS superseded_by VARCHAR;
+    """),
 ]
 
 
@@ -234,6 +255,39 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 
+def _text_dedup(
+    conn: duckdb.DuckDBPyConnection,
+    table: str,
+    text: str,
+    select_cols: str,
+    scope: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Fallback deduplication by exact text match.
+    Used when embedding is None (Ollama down) or existing items lack embeddings.
+    Respects scope filtering: only matches within the same scope or global.
+    Returns the first matching active row as a dict, or None.
+    """
+    text_col = "name" if table == "entities" else "text"
+    active_clause = "AND is_active = TRUE"
+    scope_sql, scope_params = _scope_filter(scope)
+    try:
+        row = conn.execute(f"""
+            SELECT {select_cols}
+            FROM {table}
+            WHERE {text_col} = ?
+              {active_clause}
+              {scope_sql}
+            LIMIT 1
+        """, [text] + scope_params).fetchone()
+        if row:
+            col_names = [c.strip() for c in select_cols.split(",")]
+            return dict(zip(col_names, row))
+    except Exception:
+        pass
+    return None
+
+
 def _cosine_py(a: list[float], b: list[float]) -> float:
     """Pure-Python cosine similarity fallback."""
     dot = sum(x * y for x, y in zip(a, b))
@@ -247,7 +301,7 @@ def _vector_search(
     table: str,
     query_embedding: list[float],
     select_cols: str,   # comma-separated logical columns (NOT embedding or score)
-    where_extra: str,
+    where_extra: str | tuple[str, list],
     limit: int,
     threshold: float,
 ) -> list[dict]:
@@ -255,11 +309,19 @@ def _vector_search(
     Find rows in `table` ordered by cosine similarity to query_embedding.
 
     select_cols controls which columns are returned in the result dicts.
+    where_extra can be a (sql_fragment, params) tuple or a plain string for
+    static fragments like "AND resolved = FALSE".
     embedding is always fetched internally for the fallback path but is
     stripped from the returned dicts.
 
     Falls back to Python cosine similarity if list_cosine_similarity fails.
     """
+    # Normalize where_extra to (sql, params)
+    if isinstance(where_extra, tuple):
+        extra_sql, extra_params = where_extra
+    else:
+        extra_sql, extra_params = where_extra, []
+
     col_list = [c.strip() for c in select_cols.split(",") if c.strip()]
     all_col_names = col_list + ["embedding", "score"]
 
@@ -269,17 +331,17 @@ def _vector_search(
                    list_cosine_similarity(embedding, ?) AS score
             FROM {table}
             WHERE is_active = TRUE AND embedding IS NOT NULL
-              {where_extra}
+              {extra_sql}
             ORDER BY score DESC
             LIMIT ?
-        """, [query_embedding, limit]).fetchall()
+        """, [query_embedding] + extra_params + [limit]).fetchall()
     except Exception:
         rows_all = conn.execute(f"""
             SELECT {select_cols}, embedding
             FROM {table}
             WHERE is_active = TRUE AND embedding IS NOT NULL
-              {where_extra}
-        """).fetchall()
+              {extra_sql}
+        """, extra_params).fetchall()
         scored = [
             (*r, _cosine_py(r[-1], query_embedding))
             for r in rows_all
@@ -299,26 +361,15 @@ def _vector_search(
 
 # ── Scope helpers ─────────────────────────────────────────────────────────
 
-def _scope_filter(scope: Optional[str]) -> str:
+def _scope_filter(scope: Optional[str]) -> tuple[str, list]:
     """
-    Return a SQL WHERE fragment to filter by scope.
-    If scope is None, returns empty string (no filter = all scopes).
+    Return a (sql_fragment, params) tuple to filter by scope.
+    If scope is None, returns ("", []) (no filter = all scopes).
     If scope is a project path, matches that scope OR global.
     """
     if scope is None:
-        return ""
-    # Match project-local items AND global items
-    return f"AND (scope = '{_sql_escape(scope)}' OR scope = '{GLOBAL_SCOPE}')"
-
-
-def _scope_filter_exact(scope: str) -> str:
-    """Strict filter — only items with exactly this scope."""
-    return f"AND scope = '{_sql_escape(scope)}'"
-
-
-def _sql_escape(s: str) -> str:
-    """Escape single quotes for inline SQL."""
-    return s.replace("'", "''")
+        return ("", [])
+    return ("AND (scope = ? OR scope = ?)", [scope, GLOBAL_SCOPE])
 
 
 def _track_item_scope(
@@ -435,6 +486,14 @@ def upsert_fact(
         if hits:
             existing = hits[0]
 
+    # Fallback: text-based dedup when embedding search didn't find a match
+    if not existing:
+        existing = _text_dedup(
+            conn, "facts", text,
+            "id, text, temporal_class, decay_score, session_count, last_seen_at",
+            scope=scope,
+        )
+
     if existing:
         new_session_count = existing["session_count"] + 1
         new_decay = decay_fn(
@@ -443,14 +502,21 @@ def upsert_fact(
         new_class = _promote_class(
             existing["temporal_class"], new_session_count, existing["last_seen_at"]
         )
-        conn.execute("""
+        # Backfill embedding if the existing row lacks one
+        emb_update = ", embedding = ?" if embedding else ""
+        params = [now, new_session_count, new_decay, new_class]
+        if embedding:
+            params.append(embedding)
+        params.append(existing["id"])
+        conn.execute(f"""
             UPDATE facts SET
                 last_seen_at   = ?,
                 session_count  = ?,
                 decay_score    = ?,
                 temporal_class = ?
+                {emb_update}
             WHERE id = ?
-        """, [now, new_session_count, new_decay, new_class, existing["id"]])
+        """, params)
         _track_item_scope(conn, existing["id"], "facts", scope)
         _maybe_auto_promote(conn, existing["id"], "facts")
         return existing["id"], False
@@ -473,15 +539,15 @@ def get_facts_by_temporal(
     limit: int,
     scope: Optional[str] = None,
 ) -> list[dict]:
-    scope_filter = _scope_filter(scope)
+    scope_sql, scope_params = _scope_filter(scope)
     rows = conn.execute(f"""
         SELECT id, text, category, temporal_class, confidence, decay_score, scope
         FROM facts
         WHERE is_active = TRUE AND temporal_class = ?
-          {scope_filter}
+          {scope_sql}
         ORDER BY decay_score DESC, last_seen_at DESC
         LIMIT ?
-    """, [temporal_class, limit]).fetchall()
+    """, [temporal_class] + scope_params + [limit]).fetchall()
     return [
         dict(zip(["id","text","category","temporal_class","confidence","decay_score","scope"], r))
         for r in rows
@@ -526,6 +592,14 @@ def upsert_idea(
         if hits:
             existing = hits[0]
 
+    # Fallback: text-based dedup
+    if not existing:
+        existing = _text_dedup(
+            conn, "ideas", text,
+            "id, text, temporal_class, decay_score, session_count, last_seen_at",
+            scope=scope,
+        )
+
     if existing:
         new_session_count = existing["session_count"] + 1
         new_decay = decay_fn(
@@ -534,11 +608,17 @@ def upsert_idea(
         new_class = _promote_class(
             existing["temporal_class"], new_session_count, existing["last_seen_at"]
         )
-        conn.execute("""
+        emb_update = ", embedding = ?" if embedding else ""
+        params = [now, new_session_count, new_decay, new_class]
+        if embedding:
+            params.append(embedding)
+        params.append(existing["id"])
+        conn.execute(f"""
             UPDATE ideas SET last_seen_at=?, session_count=?,
                              decay_score=?, temporal_class=?
+                             {emb_update}
             WHERE id=?
-        """, [now, new_session_count, new_decay, new_class, existing["id"]])
+        """, params)
         _track_item_scope(conn, existing["id"], "ideas", scope)
         _maybe_auto_promote(conn, existing["id"], "ideas")
         return existing["id"], False
@@ -610,13 +690,13 @@ def get_top_entities(
     limit: int = SESSION_ENTITIES_LIMIT,
     scope: Optional[str] = None,
 ) -> list[str]:
-    scope_filter = _scope_filter(scope)
+    scope_sql, scope_params = _scope_filter(scope)
     rows = conn.execute(f"""
         SELECT name FROM entities
-        WHERE 1=1 {scope_filter}
+        WHERE 1=1 {scope_sql}
         ORDER BY session_count DESC, last_seen_at DESC
         LIMIT ?
-    """, [limit]).fetchall()
+    """, scope_params + [limit]).fetchall()
     return [r[0] for r in rows]
 
 
@@ -671,17 +751,17 @@ def get_relationships_for_entities(
         return []
     placeholders = ", ".join("?" * len(entity_names))
     names_lower = [n.lower() for n in entity_names]
-    scope_filter = _scope_filter(scope)
+    scope_sql, scope_params = _scope_filter(scope)
     rows = conn.execute(f"""
         SELECT from_entity, to_entity, rel_type, description, strength, session_count
         FROM relationships
         WHERE is_active = TRUE
           AND (LOWER(from_entity) IN ({placeholders})
                OR LOWER(to_entity) IN ({placeholders}))
-          {scope_filter}
+          {scope_sql}
         ORDER BY strength DESC, session_count DESC
         LIMIT ?
-    """, names_lower + names_lower + [limit]).fetchall()
+    """, names_lower + names_lower + scope_params + [limit]).fetchall()
     return [
         dict(zip(["from_entity","to_entity","rel_type","description","strength","session_count"], r))
         for r in rows
@@ -693,13 +773,13 @@ def get_all_relationships(
     scope: Optional[str] = None,
 ) -> list[dict]:
     """All active relationships — used for graph visualisation."""
-    scope_filter = _scope_filter(scope)
+    scope_sql, scope_params = _scope_filter(scope)
     rows = conn.execute(f"""
         SELECT from_entity, to_entity, rel_type, description, strength, session_count
         FROM relationships
-        WHERE is_active = TRUE {scope_filter}
+        WHERE is_active = TRUE {scope_sql}
         ORDER BY strength DESC
-    """).fetchall()
+    """, scope_params).fetchall()
     return [
         dict(zip(["from","to","rel_type","description","strength","session_count"], r))
         for r in rows
@@ -729,10 +809,24 @@ def upsert_decision(
         if hits:
             existing = hits[0]
 
+    # Fallback: text-based dedup
+    if not existing:
+        existing = _text_dedup(
+            conn, "decisions", text,
+            "id, text, temporal_class, decay_score, session_count, last_seen_at",
+            scope=scope,
+        )
+
     if existing:
-        conn.execute("""
-            UPDATE decisions SET last_seen_at=?, session_count=session_count+1 WHERE id=?
-        """, [now, existing["id"]])
+        emb_update = ", embedding = ?" if embedding else ""
+        params = [now]
+        if embedding:
+            params.append(embedding)
+        params.append(existing["id"])
+        conn.execute(f"""
+            UPDATE decisions SET last_seen_at=?, session_count=session_count+1
+            {emb_update} WHERE id=?
+        """, params)
         _track_item_scope(conn, existing["id"], "decisions", scope)
         _maybe_auto_promote(conn, existing["id"], "decisions")
         return existing["id"], False
@@ -753,14 +847,14 @@ def get_decisions(
     limit: int = SESSION_DECISIONS_LIMIT,
     scope: Optional[str] = None,
 ) -> list[dict]:
-    scope_filter = _scope_filter(scope)
+    scope_sql, scope_params = _scope_filter(scope)
     rows = conn.execute(f"""
         SELECT id, text, temporal_class, decay_score
         FROM decisions
-        WHERE is_active = TRUE {scope_filter}
+        WHERE is_active = TRUE {scope_sql}
         ORDER BY decay_score DESC, last_seen_at DESC
         LIMIT ?
-    """, [limit]).fetchall()
+    """, scope_params + [limit]).fetchall()
     return [dict(zip(["id","text","temporal_class","decay_score"], r)) for r in rows]
 
 
@@ -804,11 +898,11 @@ def search_questions(
     limit: int = PROMPT_QUESTIONS_LIMIT,
     scope: Optional[str] = None,
 ) -> list[dict]:
-    scope_filter = _scope_filter(scope)
+    scope_sql, scope_params = _scope_filter(scope)
     return _vector_search(
         conn, "open_questions", query_embedding,
         "id, text, resolved, last_seen_at",
-        f"AND resolved = FALSE {scope_filter}", limit, RECALL_THRESHOLD,
+        (f"AND resolved = FALSE {scope_sql}", scope_params), limit, RECALL_THRESHOLD,
     )
 
 
@@ -926,18 +1020,14 @@ def search_all_by_text(
     query_lower = query.lower()
 
     for table, col in _ALL_FORGET_TABLES.items():
-        active_filter = "is_active = TRUE AND" if table != "entities" else (
-            "is_active = TRUE AND" if "is_active" in _get_columns(conn, table) else ""
-        )
-        # After migration 3, entities always has is_active
         try:
-            active_clause = "is_active = TRUE AND " if table in ("facts", "ideas", "decisions", "relationships", "open_questions", "entities") else ""
-            scope_filter = _scope_filter(scope) if scope else ""
+            active_clause = "is_active = TRUE AND "
+            scope_sql, scope_params = _scope_filter(scope) if scope else ("", [])
             rows = conn.execute(f"""
                 SELECT id, {col} FROM {table}
                 WHERE {active_clause}LOWER({col}) LIKE ?
-                {scope_filter}
-            """, [f"%{query_lower}%"]).fetchall()
+                {scope_sql}
+            """, [f"%{query_lower}%"] + scope_params).fetchall()
             for row in rows:
                 results.append({"id": row[0], "text": row[1], "table": table})
         except Exception:
@@ -1041,3 +1131,167 @@ def get_stats(conn: duckdb.DuckDBPyConnection) -> dict:
                        "resolved": count("open_questions","resolved=TRUE")},
         "sessions":   {"total": conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]},
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Narrative storage (incremental extraction)
+# ══════════════════════════════════════════════════════════════════════════
+
+def upsert_narrative(
+    conn: duckdb.DuckDBPyConnection,
+    session_id: str,
+    pass_number: int,
+    narrative: str,
+    embedding: Optional[list[float]] = None,
+    is_final: bool = False,
+    scope: str = "__global__",
+) -> str:
+    """Insert or replace a narrative for a session+pass. Returns the narrative ID."""
+    # Check if one already exists for this session + pass
+    existing = conn.execute(
+        "SELECT id FROM session_narratives WHERE session_id = ? AND pass_number = ?",
+        [session_id, pass_number],
+    ).fetchone()
+
+    if existing:
+        nid = existing[0]
+        conn.execute(
+            "UPDATE session_narratives SET narrative = ?, embedding = ?, is_final = ?, scope = ? WHERE id = ?",
+            [narrative, embedding, is_final, scope, nid],
+        )
+        return nid
+
+    nid = _uid()
+    conn.execute(
+        """INSERT INTO session_narratives(id, session_id, pass_number, narrative, embedding, is_final, scope)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        [nid, session_id, pass_number, narrative, embedding, is_final, scope],
+    )
+    return nid
+
+
+def finalize_narratives(
+    conn: duckdb.DuckDBPyConnection,
+    session_id: str,
+) -> None:
+    """
+    Mark the highest-pass narrative as final and delete intermediate ones.
+    Only the final narrative persists for long-term recall.
+    """
+    rows = conn.execute(
+        "SELECT id, pass_number FROM session_narratives WHERE session_id = ? ORDER BY pass_number DESC",
+        [session_id],
+    ).fetchall()
+
+    if not rows:
+        return
+
+    # Mark highest pass as final
+    final_id = rows[0][0]
+    conn.execute(
+        "UPDATE session_narratives SET is_final = TRUE WHERE id = ?",
+        [final_id],
+    )
+
+    # Delete all non-final narratives for this session
+    if len(rows) > 1:
+        non_final_ids = [r[0] for r in rows[1:]]
+        for nfid in non_final_ids:
+            conn.execute("DELETE FROM session_narratives WHERE id = ?", [nfid])
+
+
+def search_narratives(
+    conn: duckdb.DuckDBPyConnection,
+    query_embedding: list[float],
+    limit: int = 3,
+    threshold: float = RECALL_THRESHOLD,
+    scope: Optional[str] = None,
+) -> list[dict]:
+    """Vector search on final narratives only."""
+    scope_sql, scope_params = _scope_filter(scope)
+    extra_sql = f"AND is_final = TRUE {scope_sql}"
+    return _vector_search(
+        conn,
+        table="session_narratives",
+        query_embedding=query_embedding,
+        select_cols="id, session_id, pass_number, narrative, scope, created_at",
+        where_extra=(extra_sql, scope_params),
+        limit=limit,
+        threshold=threshold,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Superseding (incremental extraction)
+# ══════════════════════════════════════════════════════════════════════════
+
+_SUPERSEDE_TABLES = {"facts", "ideas", "decisions", "open_questions"}
+
+
+def supersede_item(
+    conn: duckdb.DuckDBPyConnection,
+    old_id: str,
+    old_table: str,
+    new_id: str,
+    reason: str,
+) -> bool:
+    """
+    Mark an item as superseded by a newer item.
+    Sets is_active=FALSE, deactivated_at=now, superseded_by=new_id.
+    Returns True if the old item was found and updated.
+    """
+    if old_table not in _SUPERSEDE_TABLES:
+        return False
+
+    # Check the column exists (migration 4 may not have run yet)
+    cols = _get_columns(conn, old_table)
+    if "superseded_by" not in cols:
+        # Fall back to simple soft-delete
+        return soft_delete(conn, old_id, old_table)
+
+    row = conn.execute(f"SELECT id FROM {old_table} WHERE id = ?", [old_id]).fetchone()
+    if not row:
+        return False
+
+    now = _now()
+    conn.execute(
+        f"UPDATE {old_table} SET is_active = FALSE, deactivated_at = ?, superseded_by = ? WHERE id = ?",
+        [now, new_id, old_id],
+    )
+    return True
+
+
+def get_items_by_ids(
+    conn: duckdb.DuckDBPyConnection,
+    item_ids: dict[str, list[str]],
+) -> list[dict]:
+    """
+    Fetch items by their IDs for inclusion in extraction prompts.
+
+    Args:
+        item_ids: dict mapping table name to list of IDs, e.g.
+                  {"facts": ["id1", "id2"], "ideas": ["id3"]}
+
+    Returns list of {"id", "text", "table"} dicts.
+    """
+    results = []
+    table_text_col = {
+        "facts": "text",
+        "ideas": "text",
+        "decisions": "text",
+        "open_questions": "text",
+    }
+
+    for table, ids in item_ids.items():
+        if not ids or table not in table_text_col:
+            continue
+        col = table_text_col[table]
+        placeholders = ",".join("?" for _ in ids)
+        rows = conn.execute(
+            f"SELECT id, {col} FROM {table} WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+        for row in rows:
+            results.append({"id": row[0], "text": row[1], "table": table})
+
+    return results

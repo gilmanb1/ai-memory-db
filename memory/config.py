@@ -53,6 +53,18 @@ SESSION_TOKEN_BUDGET  = 3000   # max estimated tokens for session context
 PROMPT_TOKEN_BUDGET   = 1500   # max estimated tokens for per-prompt context
 CHARS_PER_TOKEN       = 4      # rough estimate for budget enforcement
 
+# ── Routing ──────────────────────────────────────────────────────────────
+# Set MEMORY_DEBUG=0 in environment to suppress routing explanations in /remember
+MEMORY_DEBUG = True  # overridden by env var in remember_cmd.py
+
 # ── Project scoping ──────────────────────────────────────────────────────
 GLOBAL_SCOPE          = "__global__"
 AUTO_PROMOTE_PROJECT_COUNT = 3  # seen in N+ distinct projects → auto-promote to global
+
+# ── Incremental extraction ──────────────────────────────────────────
+EXTRACTION_THRESHOLDS       = [40, 70, 90]   # context % triggers for incremental passes
+CROSS_PASS_DEDUP_THRESHOLD  = 0.85           # tighter dedup between passes and against recalled items
+DELTA_MIN_USER_MESSAGES     = 3              # skip extraction if delta has fewer user messages
+DELTA_MIN_USER_CHARS        = 500            # skip extraction if delta has less user text
+NARRATIVE_SEARCH_LIMIT      = 3              # max narratives returned in prompt recall
+NARRATIVE_TOKEN_BUDGET      = 400            # tokens reserved for narratives in prompt recall

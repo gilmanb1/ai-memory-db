@@ -1,0 +1,242 @@
+{
+  "session_summary": "The conversation covered a review of a financial application's codebase, including SQLAlchemy configuration, JWT authentication middleware, transaction processing logic, and a React Query-based frontend. A key architectural decision was made to use PostgreSQL over MySQL for ACID compliance. Transient debugging details (pytest failures, current file) were noted but are ephemeral.",
+  "facts": [
+    {
+      "text": "The project uses FastAPI to serve REST API endpoints.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The project uses SQLAlchemy ORM for database queries.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "SQLAlchemy ORM was chosen due to requirements around reliability and compliance.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The project uses PostgreSQL as the primary database.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "PostgreSQL was chosen over MySQL for ACID compliance.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT authentication middleware uses HS256 algorithm by default.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT token expiry is set to 24 hours (timedelta(hours=24)).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT tokens are passed via the Authorization header as Bearer tokens.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Expired JWT tokens return HTTP 401 with error 'Token expired'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction amounts must be positive; a ValueError is raised otherwise.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transactions are validated against a SUPPORTED_CURRENCIES list.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction amounts are stored in cents (amount * 100) as integers in LedgerEntry.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "LedgerEntry records debit_account, credit_account, amount_cents, currency, and idempotency_key.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transactions use an idempotency_key to prevent duplicate processing.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The frontend uses React Query (@tanstack/react-query) for data fetching and mutations.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction queries have a staleTime of 30,000ms (30 seconds) and refetchOnWindowFocus enabled.",
+      "category": "technical",
+      "confidence": "medium",
+      "temporal_class": "long"
+    },
+    {
+      "text": "On a successful transfer mutation, both 'transactions' and 'balance' query caches are invalidated.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "During this session, pytest was run and produced 3 failures.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "short"
+    },
+    {
+      "text": "The current file being worked on during this session is app/main.py.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "short"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Using idempotency keys on transactions is a strong safeguard against double-processing in financial systems.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The combination of FastAPI + SQLAlchemy + PostgreSQL forms a reliable, compliance-friendly backend stack for financial applications.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Storing amounts in cents as integers avoids floating-point precision errors in financial calculations.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Invalidating both 'transactions' and 'balance' query caches on transfer success ensures UI consistency across related data.",
+      "type": "insight",
+      "temporal_class": "long"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "REST API endpoints",
+      "type": "enables",
+      "description": "FastAPI serves the REST API endpoints for the application."
+    },
+    {
+      "from": "SQLAlchemy ORM",
+      "to": "PostgreSQL",
+      "type": "uses",
+      "description": "SQLAlchemy ORM is used to interact with the PostgreSQL database."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "FastAPI",
+      "type": "part_of",
+      "description": "AuthMiddleware is a JWT authentication middleware integrated into the FastAPI application."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "JWT",
+      "type": "uses",
+      "description": "AuthMiddleware uses JWT for token-based authentication with HS256 algorithm."
+    },
+    {
+      "from": "process_transaction",
+      "to": "LedgerEntry",
+      "type": "leads_to",
+      "description": "A valid transaction creates a LedgerEntry record in the database."
+    },
+    {
+      "from": "process_transaction",
+      "to": "SQLAlchemy ORM",
+      "type": "uses",
+      "description": "process_transaction uses SQLAlchemy's db.session to persist LedgerEntry records."
+    },
+    {
+      "from": "React Query",
+      "to": "REST API endpoints",
+      "type": "depends_on",
+      "description": "The React Query hooks fetch data from the FastAPI REST API endpoints."
+    },
+    {
+      "from": "useTransfer mutation",
+      "to": "useTransactions query",
+      "type": "causes",
+      "description": "A successful transfer mutation invalidates the transactions and balance query caches."
+    },
+    {
+      "from": "PostgreSQL",
+      "to": "MySQL",
+      "type": "replaces",
+      "description": "PostgreSQL was chosen over MySQL specifically for ACID compliance."
+    },
+    {
+      "from": "LedgerEntry",
+      "to": "Transaction",
+      "type": "defined_by",
+      "description": "LedgerEntry is created from a validated Transaction, storing financial debit/credit details."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Use PostgreSQL over MySQL for ACID compliance.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use SQLAlchemy ORM for database queries, driven by reliability and compliance requirements.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT token expiry is set to 24 hours.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Store transaction amounts in cents (integer) rather than decimals to avoid floating-point issues.",
+      "temporal_class": "long"
+    }
+  ],
+  "open_questions": [
+    "What is the full list of SUPPORTED_CURRENCIES in the transaction processing logic?",
+    "What is the full SQLAlchemy configuration (connection pooling, session management, etc.)?",
+    "Are there any known issues behind the 3 pytest failures encountered this session?",
+    "Is there a refresh token mechanism to complement the 24-hour JWT expiry?"
+  ],
+  "entities": [
+    "FastAPI",
+    "SQLAlchemy",
+    "PostgreSQL",
+    "MySQL",
+    "AuthMiddleware",
+    "JWT",
+    "LedgerEntry",
+    "Transaction",
+    "React Query",
+    "process_transaction",
+    "useTransactions",
+    "useTransfer",
+    "app/main.py"
+  ]
+}

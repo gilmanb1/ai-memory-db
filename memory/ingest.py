@@ -17,10 +17,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import DB_PATH, GLOBAL_SCOPE
-from . import db, embeddings, extract
+from .config import DB_PATH, GLOBAL_SCOPE, CROSS_PASS_DEDUP_THRESHOLD, RECALL_THRESHOLD
+from . import db, embeddings, extract, extraction_state
 from .decay import compute_decay_score
 from .scope import resolve_scope
+from typing import Optional
 
 
 LOCK_DIR = Path.home() / ".claude" / "memory" / "locks"
@@ -235,6 +236,10 @@ def run_extraction(
 
     # ── Decay pass ────────────────────────────────────────────────────────
     decay_stats = db.apply_decay_pass(conn)
+
+    # ── Purge old soft-deleted items (>30 days) ──────────────────────────
+    purge_stats = db.purge_deleted(conn)
+
     stats = db.get_stats(conn)
     conn.close()
 
@@ -256,6 +261,383 @@ def run_extraction(
 
     _err(f"[memory] Extracted via {trigger}: +{counters['facts']} facts, "
          f"+{counters['ideas']} ideas, +{counters['entities']} entities")
+
+    return summary
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Incremental extraction pipeline
+# ══════════════════════════════════════════════════════════════════════════
+
+def _store_structured_items(
+    conn,
+    knowledge: dict,
+    session_id: str,
+    scope: str,
+    skip_embeddings: Optional[list[list[float]]] = None,
+    dedup_threshold: float = 0.92,
+) -> tuple[dict, dict[str, list[str]]]:
+    """
+    Embed and upsert structured items (entities, facts, ideas, decisions, questions).
+
+    If skip_embeddings is provided, any new item with cosine >= dedup_threshold
+    against those embeddings is treated as a near-duplicate and not inserted
+    (the existing upsert handles reinforcement).
+
+    Returns (counters_dict, new_item_ids_dict).
+    """
+    counters = {"facts": 0, "ideas": 0, "entities": 0, "rels": 0, "decisions": 0, "questions": 0}
+    new_ids: dict[str, list[str]] = {"facts": [], "ideas": [], "decisions": []}
+
+    def _should_skip(emb):
+        """Check if this embedding is too similar to a known prior/recalled item."""
+        if not skip_embeddings or emb is None:
+            return False
+        for skip_emb in skip_embeddings:
+            if skip_emb is None:
+                continue
+            sim = _cosine(emb, skip_emb)
+            if sim >= dedup_threshold:
+                return True
+        return False
+
+    # Entities
+    for entity_name in knowledge.get("entities", []):
+        emb = embeddings.embed(entity_name)
+        db.upsert_entity(conn, entity_name, embedding=emb, scope=scope)
+        counters["entities"] += 1
+
+    # Facts
+    for fact in knowledge.get("facts", []):
+        text = fact.get("text", "").strip()
+        if not text:
+            continue
+        emb = embeddings.embed(text)
+        if _should_skip(emb):
+            continue
+        fid, is_new = db.upsert_fact(
+            conn, text=text,
+            category=fact.get("category", "contextual"),
+            temporal_class=fact.get("temporal_class", "short"),
+            confidence=fact.get("confidence", "medium"),
+            embedding=emb, session_id=session_id,
+            decay_fn=compute_decay_score, scope=scope,
+        )
+        if is_new:
+            counters["facts"] += 1
+            new_ids["facts"].append(fid)
+            entity_names = knowledge.get("entities", [])
+            db.link_fact_entities(conn, fid, [
+                e for e in entity_names if e.lower() in text.lower()
+            ])
+
+    # Ideas
+    for idea in knowledge.get("ideas", []):
+        text = idea.get("text", "").strip()
+        if not text:
+            continue
+        emb = embeddings.embed(text)
+        if _should_skip(emb):
+            continue
+        iid, is_new = db.upsert_idea(
+            conn, text=text,
+            idea_type=idea.get("type", "insight"),
+            temporal_class=idea.get("temporal_class", "short"),
+            embedding=emb, session_id=session_id,
+            decay_fn=compute_decay_score, scope=scope,
+        )
+        if is_new:
+            counters["ideas"] += 1
+            new_ids["ideas"].append(iid)
+
+    # Relationships
+    for rel in knowledge.get("relationships", []):
+        f = rel.get("from", "").strip()
+        t = rel.get("to", "").strip()
+        if f and t:
+            db.upsert_relationship(
+                conn, from_entity=f, to_entity=t,
+                rel_type=rel.get("type", "relates_to"),
+                description=rel.get("description", ""),
+                session_id=session_id, scope=scope,
+            )
+            counters["rels"] += 1
+
+    # Decisions
+    for dec in knowledge.get("key_decisions", []):
+        text = dec.get("text", dec) if isinstance(dec, dict) else dec
+        text = text.strip() if isinstance(text, str) else ""
+        if not text:
+            continue
+        tc = dec.get("temporal_class", "medium") if isinstance(dec, dict) else "medium"
+        emb = embeddings.embed(text)
+        if _should_skip(emb):
+            continue
+        did, is_new = db.upsert_decision(
+            conn, text=text, temporal_class=tc,
+            embedding=emb, session_id=session_id,
+            decay_fn=compute_decay_score, scope=scope,
+        )
+        if is_new:
+            counters["decisions"] += 1
+            new_ids["decisions"].append(did)
+
+    # Open questions
+    for q_text in knowledge.get("open_questions", []):
+        q_text = q_text.strip() if isinstance(q_text, str) else ""
+        if not q_text:
+            continue
+        emb = embeddings.embed(q_text)
+        _, is_new = db.upsert_question(conn, q_text, emb, session_id, scope=scope)
+        if is_new:
+            counters["questions"] += 1
+
+    return counters, new_ids
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Pure-Python cosine similarity."""
+    import math
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def run_incremental_extraction(
+    session_id: str,
+    transcript_path: str,
+    trigger: str,
+    cwd: str,
+    api_key: str,
+    quiet: bool = False,
+    is_final: bool = False,
+    session_recall_items: Optional[list[dict]] = None,
+) -> dict | None:
+    """
+    Incremental extraction pipeline: parse delta, call Claude, embed, store.
+
+    Processes only the conversation segment since the last extraction pass.
+    Each pass receives:
+      - The prior pass's narrative summary
+      - Relevant existing DB items (for cross-session superseding)
+      - IDs of items already extracted this session (to avoid re-extraction)
+
+    When is_final=True, finalizes narratives and marks extraction complete.
+
+    Returns a summary dict on success, None on failure.
+    """
+    if not api_key:
+        _err("[memory/ingest] ANTHROPIC_API_KEY not set — skipping.")
+        return None
+
+    if not transcript_path or not Path(transcript_path).exists():
+        _err(f"[memory/ingest] Transcript not found: {transcript_path!r}")
+        return None
+
+    # ── Load state ──────────────────────────────────────────────────────
+    state = extraction_state.load_state(session_id)
+    pass_count = state["pass_count"] if state else 0
+    byte_offset = state["last_byte_offset"] if state else 0
+    prior_narrative = state["last_narrative"] if state else None
+    prior_item_ids = state["prior_item_ids"] if state else {"facts": [], "ideas": [], "decisions": []}
+    recalled_item_ids = state.get("recalled_item_ids", []) if state else []
+
+    # ── Parse delta ──────────────────────────────────────────────────────
+    messages, new_offset = extract.parse_transcript_delta(transcript_path, byte_offset)
+    if not messages:
+        _err("[memory/ingest] No new messages in delta.")
+        if is_final and pass_count > 0:
+            # Still finalize even if no new content
+            conn = db.get_connection()
+            scope = resolve_scope(cwd)
+            db.finalize_narratives(conn, session_id)
+            conn.close()
+            extraction_state.mark_extraction_complete(session_id)
+            extraction_state.delete_state(session_id)
+            extraction_state.delete_recall_cache(session_id)
+        return None
+
+    # ── Quality gate ─────────────────────────────────────────────────────
+    if not is_final and not extract.is_delta_substantial(messages):
+        _err(f"[memory/ingest] Delta not substantial ({len(messages)} msgs), deferring.")
+        # Save updated offset so next pass includes this content
+        new_state = {
+            "session_id": session_id,
+            "pass_count": pass_count,
+            "last_byte_offset": new_offset,
+            "last_narrative": prior_narrative or "",
+            "prior_item_ids": prior_item_ids,
+            "recalled_item_ids": recalled_item_ids,
+            "last_pass_at": datetime.now(timezone.utc).isoformat(),
+        }
+        extraction_state.save_state(session_id, new_state)
+        return None
+
+    # ── Build delta text ─────────────────────────────────────────────────
+    delta_text = extract.build_conversation_text(messages)
+
+    # ── Resolve scope ────────────────────────────────────────────────────
+    scope = resolve_scope(cwd)
+
+    # ── Gather existing items for superseding ────────────────────────────
+    existing_items = []
+    conn = db.get_connection()
+
+    if pass_count == 0 and session_recall_items:
+        # Pass 1: use cached session-start recall items
+        existing_items = session_recall_items
+    elif pass_count == 0:
+        # Pass 1 without cache: load from recall cache file
+        cached = extraction_state.load_recall_cache(session_id)
+        if cached:
+            existing_items = cached
+        else:
+            # Fallback: embed first 1000 chars and search
+            snippet = delta_text[:4000]  # ~1000 tokens
+            snippet_emb = embeddings.embed(snippet)
+            if snippet_emb:
+                facts = db.search_facts(conn, snippet_emb, limit=5, threshold=RECALL_THRESHOLD, scope=scope)
+                decisions = db.search_facts(conn, snippet_emb, limit=3, threshold=RECALL_THRESHOLD, scope=scope)
+                existing_items = [
+                    {"id": r["id"], "text": r["text"], "table": "facts"} for r in facts
+                ] + [
+                    {"id": r["id"], "text": r["text"], "table": "decisions"} for r in decisions
+                ]
+    else:
+        # Pass 2+: use prior narrative to find relevant existing items
+        if prior_narrative:
+            narrative_emb = embeddings.embed(prior_narrative)
+            if narrative_emb:
+                facts = db.search_facts(conn, narrative_emb, limit=5, threshold=RECALL_THRESHOLD, scope=scope)
+                decs = db.search_facts(conn, narrative_emb, limit=3, threshold=RECALL_THRESHOLD, scope=scope)
+                existing_items = [
+                    {"id": r["id"], "text": r["text"], "table": "facts"} for r in facts
+                ] + [
+                    {"id": r["id"], "text": r["text"], "table": "decisions"} for r in decs
+                ]
+
+    # ── Gather prior pass items ──────────────────────────────────────────
+    prior_items = []
+    if any(prior_item_ids.get(t) for t in ("facts", "ideas", "decisions")):
+        prior_items = db.get_items_by_ids(conn, prior_item_ids)
+
+    # ── Build skip embeddings for cross-pass dedup ───────────────────────
+    skip_embeddings = []
+    for item in prior_items + existing_items:
+        emb = embeddings.embed(item["text"])
+        if emb:
+            skip_embeddings.append(emb)
+
+    # ── Extract knowledge ────────────────────────────────────────────────
+    knowledge = None
+    for attempt in range(2):
+        try:
+            knowledge = extract.extract_knowledge_incremental(
+                delta_text=delta_text,
+                api_key=api_key,
+                prior_narrative=prior_narrative,
+                existing_items=existing_items if existing_items else None,
+                prior_items=prior_items if prior_items else None,
+            )
+            break
+        except Exception as exc:
+            if attempt == 0:
+                _err(f"[memory/ingest] Incremental extraction failed (attempt 1), retrying: {exc}")
+                time.sleep(2)
+            else:
+                _err(f"[memory/ingest] Incremental extraction failed after retry: {exc}")
+                conn.close()
+                return None
+
+    if knowledge is None:
+        conn.close()
+        return None
+
+    # ── Upsert session ───────────────────────────────────────────────────
+    db.upsert_session(
+        conn, session_id=session_id, trigger=f"{trigger}/pass{pass_count+1}",
+        cwd=cwd, transcript_path=transcript_path,
+        message_count=len(messages), summary=knowledge.get("narrative_summary", ""),
+        scope=scope,
+    )
+
+    # ── Process supersedes ───────────────────────────────────────────────
+    supersede_count = 0
+    for sup in knowledge.get("supersedes", []):
+        old_id = sup.get("old_id", "")
+        old_table = sup.get("old_table", "")
+        reason = sup.get("reason", "")
+        if old_id and old_table:
+            # Find the best matching new item to link as the replacement
+            # For now, use the first new item as a placeholder
+            new_id = ""  # Will be set after storing items
+            if db.supersede_item(conn, old_id, old_table, new_id, reason):
+                supersede_count += 1
+
+    # ── Store structured items ───────────────────────────────────────────
+    counters, new_ids = _store_structured_items(
+        conn, knowledge, session_id, scope,
+        skip_embeddings=skip_embeddings,
+        dedup_threshold=CROSS_PASS_DEDUP_THRESHOLD,
+    )
+
+    # ── Store narrative ──────────────────────────────────────────────────
+    narrative = knowledge.get("narrative_summary", "")
+    narrative_emb = embeddings.embed(narrative) if narrative else None
+    db.upsert_narrative(
+        conn, session_id, pass_count + 1, narrative,
+        embedding=narrative_emb, is_final=is_final, scope=scope,
+    )
+
+    # ── Update state ─────────────────────────────────────────────────────
+    # Merge new item IDs with prior
+    merged_ids = {
+        "facts": prior_item_ids.get("facts", []) + new_ids.get("facts", []),
+        "ideas": prior_item_ids.get("ideas", []) + new_ids.get("ideas", []),
+        "decisions": prior_item_ids.get("decisions", []) + new_ids.get("decisions", []),
+    }
+    new_state = {
+        "session_id": session_id,
+        "pass_count": pass_count + 1,
+        "last_byte_offset": new_offset,
+        "last_narrative": narrative,
+        "prior_item_ids": merged_ids,
+        "recalled_item_ids": [item["id"] for item in existing_items],
+        "last_pass_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # ── Finalize if this is the last pass ────────────────────────────────
+    if is_final:
+        db.finalize_narratives(conn, session_id)
+        decay_stats = db.apply_decay_pass(conn)
+        db.purge_deleted(conn)
+        conn.close()
+        extraction_state.mark_extraction_complete(session_id)
+        extraction_state.delete_state(session_id)
+        extraction_state.delete_recall_cache(session_id)
+        cleanup_old_locks()
+    else:
+        extraction_state.save_state(session_id, new_state)
+        decay_stats = {"updated": 0, "forgotten": 0, "promoted": 0}
+        conn.close()
+
+    # ── Output ───────────────────────────────────────────────────────────
+    summary = {
+        "session_id": session_id,
+        "trigger": trigger,
+        "pass_number": pass_count + 1,
+        "is_final": is_final,
+        "counters": counters,
+        "superseded": supersede_count,
+        "narrative": narrative,
+        "decay_stats": decay_stats,
+    }
+
+    if not quiet:
+        _err(f"[memory] Pass {pass_count+1} via {trigger}: "
+             f"+{counters['facts']} facts, +{counters['ideas']} ideas, "
+             f"{supersede_count} superseded, final={is_final}")
 
     return summary
 

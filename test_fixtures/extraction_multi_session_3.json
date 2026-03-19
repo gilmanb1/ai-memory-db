@@ -1,0 +1,247 @@
+{
+  "session_summary": "The conversation covers a fintech project built with FastAPI, PostgreSQL, and Redis (docker-compose), featuring JWT authentication, transaction processing, and a React frontend using TanStack Query. Key decisions were made to replace Redis with Memcached for session caching and to add GraphQL as an alternative API layer alongside REST. The Memcached integration details remain incomplete/unresolved.",
+  "facts": [
+    {
+      "text": "The project is a fintech application named 'fintech' (PostgreSQL DB name).",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The backend API is built with FastAPI running on port 8000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "PostgreSQL 16 (Alpine) is used as the primary database, accessible at postgresql://user:pass@db:5432/fintech.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Redis 7 (Alpine) was originally configured for caching, with maxmemory 256mb and allkeys-lru eviction policy.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Memcached was decided to replace Redis for session caching, driven by reliability and compliance requirements.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The API exposes REST endpoints and GraphQL was decided to be added as an alternative API layer.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT authentication middleware is implemented using HS256 algorithm with a 24-hour token expiry.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT tokens are read from the Authorization header as Bearer tokens; expired tokens return HTTP 401.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe integration is present; the STRIPE_SECRET_KEY is injected via environment variable.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table uses UUID primary keys, stores amounts in cents (BIGINT), supports multi-currency (VARCHAR(3), default USD), and includes an idempotency_key (UNIQUE, VARCHAR(64)).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction status values include 'pending' and 'settled'; a partial index exists on non-settled transactions.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "There is an index on transactions(source_account_id, created_at DESC) for efficient account-level queries.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "process_transaction validates amount > 0 and currency in SUPPORTED_CURRENCIES, then writes a LedgerEntry with amount_cents = int(amount * 100).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The React frontend uses TanStack Query (@tanstack/react-query) for data fetching and mutations.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "useTransactions hook has staleTime of 30,000ms and refetchOnWindowFocus enabled.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "useTransfer mutation invalidates both 'transactions' and 'balance' query keys on success.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "The docker-compose setup uses a named volume 'pgdata' for PostgreSQL data persistence.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The caching replacement from Redis to Memcached was justified by reliability and compliance requirements.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Adding GraphQL as an alternative API layer alongside REST increases client flexibility and enables more efficient data fetching.",
+      "type": "proposal",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Replacing Redis with Memcached for session caching may require re-evaluating cache invalidation strategies since Memcached lacks Redis's pub/sub and persistence features.",
+      "type": "concern",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Using idempotency keys on transactions is a strong safety mechanism for preventing duplicate financial operations.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Storing monetary amounts in cents (integer) rather than floats avoids floating-point precision issues in financial calculations.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The Memcached integration details (client library, connection config, what is cached) are not yet defined and need to be fleshed out.",
+      "type": "concern",
+      "temporal_class": "medium"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "PostgreSQL",
+      "type": "uses",
+      "description": "FastAPI connects to PostgreSQL 16 as its primary data store."
+    },
+    {
+      "from": "FastAPI",
+      "to": "AuthMiddleware",
+      "type": "uses",
+      "description": "FastAPI uses JWT AuthMiddleware to authenticate all requests."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "JWT HS256",
+      "type": "uses",
+      "description": "AuthMiddleware decodes tokens using the HS256 algorithm."
+    },
+    {
+      "from": "Memcached",
+      "to": "Redis",
+      "type": "replaces",
+      "description": "Memcached replaces Redis for session caching due to reliability and compliance requirements."
+    },
+    {
+      "from": "FastAPI",
+      "to": "GraphQL",
+      "type": "enables",
+      "description": "GraphQL is being added as an alternative API layer alongside the existing REST API."
+    },
+    {
+      "from": "process_transaction",
+      "to": "LedgerEntry",
+      "type": "leads_to",
+      "description": "process_transaction creates and commits a LedgerEntry to the database upon successful validation."
+    },
+    {
+      "from": "React frontend",
+      "to": "TanStack Query",
+      "type": "uses",
+      "description": "The React frontend uses TanStack Query for server state management and mutations."
+    },
+    {
+      "from": "useTransfer mutation",
+      "to": "transactions query",
+      "type": "causes",
+      "description": "A successful transfer mutation invalidates the transactions and balance query caches."
+    },
+    {
+      "from": "fintech project",
+      "to": "Stripe",
+      "type": "uses",
+      "description": "The fintech project integrates Stripe via a secret key environment variable."
+    },
+    {
+      "from": "transactions table",
+      "to": "accounts table",
+      "type": "depends_on",
+      "description": "Transactions reference accounts via source_account_id and dest_account_id foreign keys."
+    },
+    {
+      "from": "FastAPI",
+      "to": "Memcached",
+      "type": "uses",
+      "description": "FastAPI is being migrated to use Memcached for session caching."
+    },
+    {
+      "from": "docker-compose",
+      "to": "FastAPI",
+      "type": "enables",
+      "description": "docker-compose orchestrates the FastAPI service along with its dependencies."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Memcached replaces Redis for session caching, driven by reliability and compliance requirements.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Add GraphQL as an alternative API layer alongside the existing REST API.",
+      "temporal_class": "long"
+    }
+  ],
+  "open_questions": [
+    "What is the specific Memcached client library and connection configuration to be used?",
+    "What data/sessions are to be stored in Memcached (scope of caching)?",
+    "Has the docker-compose.yml been updated to replace the Redis service with Memcached?",
+    "What GraphQL library/framework will be used with FastAPI (e.g., Strawberry, Ariadne)?",
+    "What currencies are included in SUPPORTED_CURRENCIES?"
+  ],
+  "entities": [
+    "FastAPI",
+    "PostgreSQL",
+    "Redis",
+    "Memcached",
+    "AuthMiddleware",
+    "TanStack Query",
+    "Stripe",
+    "GraphQL",
+    "LedgerEntry",
+    "process_transaction",
+    "docker-compose",
+    "React frontend",
+    "fintech project",
+    "JWT"
+  ]
+}

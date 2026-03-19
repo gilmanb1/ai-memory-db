@@ -10,8 +10,8 @@
 status_line.py — Claude Code status line script.
 
 Called repeatedly with JSON on stdin containing context_window stats.
-When used_percentage >= 90%, triggers background knowledge extraction
-before compaction kicks in.
+Triggers background knowledge extraction at multiple thresholds (40%, 70%, 90%)
+for incremental multi-pass extraction.
 
 Outputs a single line of text for the status bar display.
 """
@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".claude"))
 
-EXTRACTION_THRESHOLD = 90  # percent context window usage
+from memory.config import EXTRACTION_THRESHOLDS
 
 _WORKER = Path.home() / ".claude" / "hooks" / "_extract_worker.py"
 
@@ -51,31 +51,41 @@ def main() -> None:
 
     # ── Display status ────────────────────────────────────────────────────
     if total:
-        remaining_pct = 100 - used_pct
         status = f"mem: {used_pct}% ctx"
     else:
         status = "mem: --"
-        remaining_pct = 100
 
-    # ── Trigger extraction at threshold ───────────────────────────────────
-    if used_pct >= EXTRACTION_THRESHOLD and session_id and transcript_path:
+    # ── Trigger extraction at thresholds ──────────────────────────────────
+    if session_id and transcript_path:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if api_key:
-            from memory.ingest import _lock_path
-            if not _lock_path(session_id).exists():
-                # Spawn background extraction
-                try:
-                    subprocess.Popen(
-                        [sys.executable, str(_WORKER), session_id, transcript_path, cwd],
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=open(Path.home() / ".claude" / "memory" / "extract.log", "a"),
-                        start_new_session=True,
-                        env={**os.environ, "ANTHROPIC_API_KEY": api_key},
-                    )
-                    status += " [extracting]"
-                except Exception:
-                    pass
+            from memory.extraction_state import (
+                is_extraction_complete, load_state,
+                acquire_running_lock, release_running_lock,
+            )
+
+            if not is_extraction_complete(session_id):
+                state = load_state(session_id)
+                pass_count = state["pass_count"] if state else 0
+
+                # Determine which threshold to check
+                threshold_idx = min(pass_count, len(EXTRACTION_THRESHOLDS) - 1)
+                threshold = EXTRACTION_THRESHOLDS[threshold_idx]
+
+                if used_pct >= threshold:
+                    # Try to spawn a background extraction pass
+                    try:
+                        subprocess.Popen(
+                            [sys.executable, str(_WORKER), session_id, transcript_path, cwd],
+                            stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL,
+                            stderr=open(Path.home() / ".claude" / "memory" / "extract.log", "a"),
+                            start_new_session=True,
+                            env={**os.environ, "ANTHROPIC_API_KEY": api_key},
+                        )
+                        status += f" [pass {pass_count + 1}]"
+                    except Exception:
+                        pass
 
     print(status)
 

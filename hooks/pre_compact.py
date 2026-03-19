@@ -9,9 +9,10 @@
 """
 pre_compact.py — Claude Code PreCompact hook.
 
-Fires before a conversation is compacted. Extracts knowledge from the
-transcript and stores it to DuckDB. Skips if extraction already ran
-for this session (e.g., triggered earlier by the status line at 90%).
+Fires before a conversation is compacted. Runs incremental extraction
+with is_final=True to finalize narratives and mark extraction complete.
+
+Skips if extraction already completed for this session.
 
 Outputs:
   stdout — formatted summary (appears in Claude Code transcript log)
@@ -26,7 +27,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".claude"))
 
-from memory.ingest import acquire_lock, run_extraction
+from memory.extraction_state import (
+    is_extraction_complete, acquire_running_lock, release_running_lock,
+    load_recall_cache,
+)
+from memory.ingest import run_incremental_extraction
 
 
 def main(payload: dict) -> None:
@@ -36,17 +41,27 @@ def main(payload: dict) -> None:
     cwd = payload.get("cwd", "")
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
-    if not acquire_lock(session_id):
-        print(f"[pre_compact] Extraction already ran for session {session_id[:12]}..., skipping.", file=sys.stderr)
+    if is_extraction_complete(session_id):
+        print(f"[pre_compact] Extraction already complete for {session_id[:12]}...", file=sys.stderr)
         sys.exit(0)
 
-    run_extraction(
-        session_id=session_id,
-        transcript_path=transcript_path,
-        trigger=f"pre_compact/{trigger}",
-        cwd=cwd,
-        api_key=api_key,
-    )
+    if not acquire_running_lock(session_id):
+        print(f"[pre_compact] Another pass is running for {session_id[:12]}...", file=sys.stderr)
+        sys.exit(0)
+
+    try:
+        recall_items = load_recall_cache(session_id)
+        run_incremental_extraction(
+            session_id=session_id,
+            transcript_path=transcript_path,
+            trigger=f"pre_compact/{trigger}",
+            cwd=cwd,
+            api_key=api_key,
+            is_final=True,
+            session_recall_items=recall_items,
+        )
+    finally:
+        release_running_lock(session_id)
 
 
 if __name__ == "__main__":

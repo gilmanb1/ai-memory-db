@@ -47,6 +47,7 @@ def main(payload: dict) -> None:
     cwd = payload.get("cwd", "")
     scope = resolve_scope(cwd) if cwd else None
 
+    conn = None
     try:
         conn = db.get_connection(read_only=True)
         stats = db.get_stats(conn)
@@ -54,14 +55,15 @@ def main(payload: dict) -> None:
         # Nothing stored yet → skip injection
         total_facts = stats["facts"]["total"]
         if total_facts == 0:
-            conn.close()
             sys.exit(0)
 
         context = recall.session_recall(conn, scope=scope)
-        conn.close()
     except Exception as exc:
         print(f"[session_start] Memory recall failed: {exc}", file=sys.stderr)
         sys.exit(0)
+    finally:
+        if conn is not None:
+            conn.close()
 
     system_message = recall.format_session_context(context)
     if not system_message:
@@ -69,6 +71,23 @@ def main(payload: dict) -> None:
 
     # Output JSON that Claude Code reads and prepends as a system message
     print(json.dumps({"systemMessage": system_message}))
+
+    # Cache recall item IDs for the first extraction pass
+    session_id = payload.get("session_id", "")
+    if session_id:
+        try:
+            from memory.extraction_state import save_recall_cache
+            recall_items = []
+            for f in context.get("long_facts", []):
+                recall_items.append({"id": f["id"], "text": f["text"], "table": "facts"})
+            for f in context.get("medium_facts", []):
+                recall_items.append({"id": f["id"], "text": f["text"], "table": "facts"})
+            for d in context.get("decisions", []):
+                recall_items.append({"id": d["id"], "text": d["text"], "table": "decisions"})
+            if recall_items:
+                save_recall_cache(session_id, recall_items)
+        except Exception:
+            pass  # Non-critical — extraction will fall back to DB query
 
     # Terminal hint
     fact_counts = stats["facts"]

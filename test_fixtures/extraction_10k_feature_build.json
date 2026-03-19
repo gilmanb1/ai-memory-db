@@ -1,0 +1,329 @@
+{
+  "session_summary": "A development session on a fintech application covering Stripe integration error handling, auth middleware, transaction processing, and database schema. Key architectural patterns were identified including JWT auth, PostgreSQL with SQLAlchemy, Redis caching, FastAPI backend, and a React/TanStack Query frontend. Two major architectural decisions were formally recorded: PostgreSQL over MySQL for ACID compliance, and JWT over session cookies for stateless auth.",
+  "facts": [
+    {
+      "text": "The project is a fintech application using PostgreSQL as the primary database.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "FastAPI serves the REST API endpoints on port 8000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Redis is used to cache session tokens for fast auth validation.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe is integrated for payment processing via webhooks.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT tokens are used for authentication with a 24-hour expiry and HS256 algorithm.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The JWT AuthMiddleware extracts tokens from the Authorization Bearer header and returns 401 on ExpiredSignatureError.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Account balances are stored as integer cents (BIGINT) to avoid floating-point rounding errors.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table uses UUID primary keys generated via gen_random_uuid().",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table has an idempotency_key column (VARCHAR 64, UNIQUE) to prevent duplicate processing.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "There is a partial index on transactions(status) WHERE status != 'settled' for performance.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "There is an index on transactions(source_account_id, created_at DESC) for query performance.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The API uses cursor-based pagination instead of offset/limit.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Rate limiting is set to 100 requests per minute per user.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The frontend uses TanStack React Query (useQuery, useMutation) for data fetching.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "useTransactions hook has staleTime of 30,000ms and refetchOnWindowFocus enabled.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "useTransfer mutation invalidates both 'transactions' and 'balance' query keys on success.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The process_transaction function raises ValueError for non-positive amounts and UnsupportedCurrencyError for unsupported currencies.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The Docker Compose setup includes three services: api, db (postgres:16-alpine), and redis (redis:7-alpine).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Redis is configured with maxmemory 256mb and allkeys-lru eviction policy.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The database name is 'fintech' and the API connects via DATABASE_URL environment variable.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "STRIPE_SECRET_KEY is injected via environment variable (not hardcoded).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table default currency is USD (VARCHAR 3).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction status field defaults to 'pending' and has possible value 'settled'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The Stripe module and SQLAlchemy module were targeted for refactoring to improve testability this session.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "pytest was run and produced 3 failures during this session.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "short"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Refactor the Stripe module for improved testability \u2014 likely by abstracting the Stripe client behind an interface or dependency injection.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Refactor the SQLAlchemy module for improved testability \u2014 potentially using repository pattern or test fixtures with an in-memory DB.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Optimize JWT query performance \u2014 the auth middleware could benefit from caching decoded tokens in Redis to reduce repeated JWT decodes.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Add error handling to the Stripe integration to gracefully handle webhook failures and API errors.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Using integer cents for monetary values avoids float precision bugs and is a well-established fintech pattern.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Cursor-based pagination is preferable over offset/limit for large or frequently updated datasets like transactions.",
+      "type": "insight",
+      "temporal_class": "long"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "AuthMiddleware",
+      "type": "uses",
+      "description": "FastAPI uses the JWT AuthMiddleware for authenticating all requests."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "JWT",
+      "type": "uses",
+      "description": "AuthMiddleware decodes and validates JWT tokens using HS256."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "Redis",
+      "type": "uses",
+      "description": "Redis caches session tokens to speed up auth validation."
+    },
+    {
+      "from": "Stripe integration",
+      "to": "FastAPI",
+      "type": "part_of",
+      "description": "Stripe payment processing is integrated into the FastAPI backend via webhooks."
+    },
+    {
+      "from": "SQLAlchemy",
+      "to": "PostgreSQL",
+      "type": "uses",
+      "description": "SQLAlchemy is the ORM used to interface with the PostgreSQL database."
+    },
+    {
+      "from": "process_transaction",
+      "to": "LedgerEntry",
+      "type": "leads_to",
+      "description": "A valid transaction is persisted as a LedgerEntry via SQLAlchemy."
+    },
+    {
+      "from": "transactions table",
+      "to": "accounts table",
+      "type": "depends_on",
+      "description": "Transactions reference accounts via source_account_id and dest_account_id foreign keys."
+    },
+    {
+      "from": "TanStack React Query",
+      "to": "FastAPI",
+      "type": "uses",
+      "description": "The frontend uses TanStack React Query to fetch data from the FastAPI REST endpoints."
+    },
+    {
+      "from": "useTransfer mutation",
+      "to": "useTransactions hook",
+      "type": "causes",
+      "description": "A successful transfer mutation invalidates and refetches transaction and balance queries."
+    },
+    {
+      "from": "Docker Compose",
+      "to": "FastAPI",
+      "type": "enables",
+      "description": "Docker Compose orchestrates the API, PostgreSQL, and Redis services."
+    },
+    {
+      "from": "PostgreSQL",
+      "to": "MySQL",
+      "type": "replaces",
+      "description": "PostgreSQL was chosen over MySQL for ACID compliance."
+    },
+    {
+      "from": "JWT",
+      "to": "session cookies",
+      "type": "replaces",
+      "description": "JWT was chosen over session cookies to enable stateless authentication."
+    },
+    {
+      "from": "idempotency_key",
+      "to": "transactions table",
+      "type": "part_of",
+      "description": "Idempotency key ensures duplicate transaction requests are safely rejected."
+    },
+    {
+      "from": "Redis",
+      "to": "Docker Compose",
+      "type": "part_of",
+      "description": "Redis runs as a service within the Docker Compose setup with 256mb max memory."
+    },
+    {
+      "from": "amount_cents (BIGINT)",
+      "to": "float rounding errors",
+      "type": "contrasts_with",
+      "description": "Storing amounts as integer cents avoids floating-point rounding errors in financial calculations."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Use PostgreSQL over MySQL for ACID compliance.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use JWT over session cookies for stateless authentication.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Store monetary amounts as integer cents (BIGINT) to avoid float rounding issues.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use cursor-based pagination instead of offset/limit for the API.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe handles payment processing via webhooks.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Refactor the Stripe and SQLAlchemy modules to improve testability.",
+      "temporal_class": "medium"
+    }
+  ],
+  "open_questions": [
+    "What specific error handling patterns should be added to the Stripe integration (retries, dead-letter queue, alerting)?",
+    "What were the 3 pytest failures and have they been resolved?",
+    "How will the Stripe and SQLAlchemy modules be refactored for testability (dependency injection, repository pattern, mocking)?",
+    "What is the JWT query performance bottleneck and what optimization approach will be used?",
+    "Are there tests currently written for PostgreSQL, FastAPI, and Redis functionality, or does this need to be built from scratch?"
+  ],
+  "entities": [
+    "Stripe",
+    "FastAPI",
+    "PostgreSQL",
+    "Redis",
+    "SQLAlchemy",
+    "JWT",
+    "TanStack React Query",
+    "AuthMiddleware",
+    "Docker Compose",
+    "LedgerEntry",
+    "process_transaction",
+    "useTransactions",
+    "useTransfer",
+    "transactions table",
+    "fintech application"
+  ]
+}

@@ -1,0 +1,352 @@
+{
+  "narrative_summary": "This is a long-running engineering session focused on a fintech application. The codebase uses FastAPI (Python) for the REST API, SQLAlchemy for database ORM, PostgreSQL 16 as the primary database, Redis 7 (now being replaced by Memcached due to licensing concerns) for session caching, Celery for async task processing, Stripe for payment processing via webhooks, JWT for authentication, Pydantic for data validation, and Docker/docker-compose for local orchestration. The production environment runs on AWS ECS Fargate with auto-scaling, and the fraud detection model runs in a sidecar container. The session has covered multiple refactoring goals (SQLAlchemy testability, Celery testability, JWT testability), query optimization for FastAPI, and adding error handling to the PostgreSQL integration. Key architectural decisions confirmed include: PostgreSQL over MySQL for ACID compliance, JWT over session cookies for stateless auth, storing monetary amounts as integer cents (not floats), cursor-based pagination over offset/limit, and Memcached replacing Redis for session caching due to licensing. Compliance requires audit logs for all financial transactions, and two-factor authentication is mandatory for transfers over $10,000. Integration tests use testcontainers for PostgreSQL and Redis.",
+  "facts": [
+    {
+      "text": "The project is a fintech application with a Python/FastAPI backend.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "FastAPI serves the REST API endpoints, exposed on port 8000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "SQLAlchemy is used as the ORM layer for database access.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "PostgreSQL 16 (alpine) is the primary database, named 'fintech', running on port 5432.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Redis 7 (alpine) was used for session token caching with maxmemory 256mb and allkeys-lru eviction policy.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Memcached replaces Redis for session caching due to licensing concerns.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe handles payment processing via webhooks.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe secret key is passed via the STRIPE_SECRET_KEY environment variable.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT tokens are used for authentication with a 24-hour expiry, using HS256 algorithm.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "AuthMiddleware is a FastAPI middleware class that decodes JWT tokens from the Authorization header and sets request.state.user_id.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Idempotency keys prevent duplicate payment processing; the idempotency_key column is UNIQUE in the transactions table.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Account balances and transaction amounts are stored as integer cents (BIGINT amount_cents) to avoid floating-point rounding errors.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The API uses cursor-based pagination instead of offset/limit, decided for reliability and compliance reasons.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Compliance team requires audit logs for all financial transactions.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Two-factor authentication is mandatory for transfers over $10,000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Rate limiting is set to 100 requests per minute per user.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The fraud detection model runs in a sidecar container.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Production runs on AWS ECS Fargate with auto-scaling.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Integration tests use testcontainers for PostgreSQL and Redis.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Celery workers handle async transaction reconciliation.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table uses UUID primary keys (gen_random_uuid()), has a JSONB metadata column, and indexes on (source_account_id, created_at DESC) and (status) where status != 'settled'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table has columns: id (UUID PK), source_account_id, dest_account_id (FK to accounts), amount_cents (BIGINT, CHECK > 0), currency (VARCHAR(3), default 'USD'), status (VARCHAR(20), default 'pending'), idempotency_key (VARCHAR(64) UNIQUE), created_at (TIMESTAMPTZ), settled_at (TIMESTAMPTZ nullable), metadata (JSONB).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "process_transaction() validates amount > 0 and currency support, creates a LedgerEntry, and commits to db.session.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The frontend uses React with @tanstack/react-query for data fetching; useTransactions hook queries /accounts/{accountId}/transactions with 30s staleTime and refetchOnWindowFocus.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "useTransfer mutation POSTs to /transfers and invalidates 'transactions' and 'balance' queries on success.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "PostgreSQL over MySQL was chosen for ACID compliance.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT over session cookies was chosen for stateless authentication.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "A SQLAlchemy error is being debugged in the current session.",
+      "category": "contextual",
+      "confidence": "medium",
+      "temporal_class": "short"
+    },
+    {
+      "text": "Refactoring goals in this session include improving testability of SQLAlchemy, Celery, and JWT modules.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "medium"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Replacing Redis with Memcached for session caching eliminates licensing risk but may reduce feature set (e.g., pub/sub, persistence).",
+      "type": "concern",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Using testcontainers for integration tests allows realistic database/cache testing without mocks, improving test fidelity.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Storing amounts as integer cents is a proven pattern in financial systems that avoids an entire class of floating-point bugs.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Cursor-based pagination is more reliable than offset/limit for high-volume financial data because it avoids skipped/duplicated rows under concurrent writes.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Running the fraud detection model as a sidecar container allows independent scaling and deployment from the main API.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The SQLAlchemy module's direct use of db.session in process_transaction() makes it hard to test in isolation; dependency injection of the session would improve testability.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "SQLAlchemy",
+      "type": "uses",
+      "description": "FastAPI routes use SQLAlchemy ORM to interact with PostgreSQL."
+    },
+    {
+      "from": "FastAPI",
+      "to": "AuthMiddleware",
+      "type": "uses",
+      "description": "FastAPI uses AuthMiddleware to validate JWT tokens on incoming requests."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "JWT tokens",
+      "type": "uses",
+      "description": "AuthMiddleware decodes JWT tokens using HS256 and a secret key."
+    },
+    {
+      "from": "SQLAlchemy",
+      "to": "PostgreSQL",
+      "type": "depends_on",
+      "description": "SQLAlchemy connects to PostgreSQL as the backing database via DATABASE_URL."
+    },
+    {
+      "from": "Memcached",
+      "to": "Redis",
+      "type": "replaces",
+      "description": "Memcached replaces Redis for session caching due to licensing concerns."
+    },
+    {
+      "from": "Celery",
+      "to": "Redis",
+      "type": "depends_on",
+      "description": "Celery workers use Redis (or its replacement) as a broker for async task processing."
+    },
+    {
+      "from": "Stripe",
+      "to": "FastAPI",
+      "type": "uses",
+      "description": "Stripe sends payment events to the FastAPI application via webhooks."
+    },
+    {
+      "from": "process_transaction",
+      "to": "LedgerEntry",
+      "type": "leads_to",
+      "description": "process_transaction() creates a LedgerEntry and commits it via db.session."
+    },
+    {
+      "from": "fraud detection model",
+      "to": "API service",
+      "type": "part_of",
+      "description": "The fraud detection model runs as a sidecar container alongside the main API service."
+    },
+    {
+      "from": "AWS ECS Fargate",
+      "to": "API service",
+      "type": "enables",
+      "description": "Production deployment uses AWS ECS Fargate with auto-scaling to run the API."
+    },
+    {
+      "from": "testcontainers",
+      "to": "integration tests",
+      "type": "enables",
+      "description": "Integration tests use testcontainers to spin up real PostgreSQL and Redis instances."
+    },
+    {
+      "from": "idempotency_key",
+      "to": "duplicate payment prevention",
+      "type": "enables",
+      "description": "The UNIQUE idempotency_key column prevents duplicate payment processing."
+    },
+    {
+      "from": "compliance requirement",
+      "to": "audit logs",
+      "type": "leads_to",
+      "description": "The compliance team's requirement drives the need for audit logs on all financial transactions."
+    },
+    {
+      "from": "two-factor authentication",
+      "to": "transfers > $10,000",
+      "type": "defined_by",
+      "description": "2FA is mandated specifically for transfers exceeding $10,000."
+    },
+    {
+      "from": "useTransfer mutation",
+      "to": "useTransactions hook",
+      "type": "causes",
+      "description": "A successful transfer invalidates the transactions and balance queries, triggering a refetch."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Use PostgreSQL over MySQL for ACID compliance.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use JWT over session cookies for stateless authentication.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Store monetary amounts as integer cents (not floats) to avoid rounding errors.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use cursor-based pagination instead of offset/limit for consistency and reliability.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Replace Redis with Memcached for session caching due to licensing concerns.",
+      "temporal_class": "long"
+    }
+  ],
+  "open_questions": [
+    "What Memcached client library will replace the Redis client in the codebase, and are there any API compatibility shims needed?",
+    "How will Celery's broker be affected by the Redis-to-Memcached migration (Celery does not natively support Memcached as a broker)?",
+    "What is the root cause of the current SQLAlchemy error being debugged?",
+    "How will the SQLAlchemy, Celery, and JWT modules be refactored to improve testability (e.g., dependency injection, repository pattern)?",
+    "Are audit logs stored in the same PostgreSQL database or a separate audit store?",
+    "How is the fraud detection sidecar integrated with the main transaction processing flow?"
+  ],
+  "entities": [
+    "FastAPI",
+    "SQLAlchemy",
+    "PostgreSQL",
+    "Redis",
+    "Memcached",
+    "Celery",
+    "Stripe",
+    "JWT",
+    "AuthMiddleware",
+    "Docker",
+    "AWS ECS Fargate",
+    "Pydantic",
+    "testcontainers",
+    "React Query",
+    "LedgerEntry",
+    "process_transaction"
+  ],
+  "supersedes": []
+}

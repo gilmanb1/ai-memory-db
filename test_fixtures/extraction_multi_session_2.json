@@ -1,0 +1,311 @@
+{
+  "session_summary": "The user debugged FastAPI errors, explored the codebase (auth middleware, transaction hooks, DB schema, Docker setup), and decided to migrate the backend from Flask to FastAPI for better async support. The session also confirmed that the database schema uses UUIDs and that the project is a fintech application with PostgreSQL, Redis, and a React frontend.",
+  "facts": [
+    {
+      "text": "The project is a fintech application.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The backend API was originally built with Flask.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "FastAPI replaces Flask as the backend framework for better async support.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The migration from Flask to FastAPI was explicitly decided during this session.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT authentication middleware is implemented in Python for FastAPI, using HS256 algorithm by default.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT token expiry is set to 24 hours in the AuthMiddleware.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "AuthMiddleware extracts the JWT from the Authorization header as a Bearer token and decodes it, storing user_id in request.state.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "On JWT expiry, the middleware returns HTTP 401 with error message 'Token expired'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The database schema was migrated to use UUIDs as primary keys, driven by reliability and compliance requirements.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table uses UUID primary key generated via gen_random_uuid(), with source_account_id and dest_account_id as UUID foreign keys to an accounts table.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction amounts are stored as BIGINT (amount_cents) with a CHECK constraint ensuring amount_cents > 0.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table includes an idempotency_key column (VARCHAR 64) with a UNIQUE constraint.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table has a status column defaulting to 'pending' and a partial index on status WHERE status != 'settled'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table has a composite index on (source_account_id, created_at DESC) named idx_transactions_source.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table stores metadata as JSONB defaulting to an empty JSON object.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The project uses PostgreSQL 16 (alpine) as the database, running in Docker with the database name 'fintech'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The project uses Redis 7 (alpine) with a max memory of 256MB and allkeys-lru eviction policy.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The API service runs on port 8000 and depends on both db and redis services in Docker Compose.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The Docker Compose environment includes DATABASE_URL (postgresql://user:pass@db:5432/fintech), REDIS_URL (redis://redis:6379/0), and STRIPE_SECRET_KEY (from env var).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe is integrated into the project via STRIPE_SECRET_KEY environment variable.",
+      "category": "technical",
+      "confidence": "medium",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The frontend uses TypeScript with TanStack React Query (useQuery, useMutation) for data fetching.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The useTransactions hook fetches transactions per accountId with a staleTime of 30 seconds and refetchOnWindowFocus enabled.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The useTransfer mutation posts to /transfers and on success invalidates both 'transactions' and 'balance' query caches.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction processing logic validates amount > 0 and checks currency against SUPPORTED_CURRENCIES before writing a LedgerEntry to the DB.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The FastAPI module refactor was initiated to improve testability.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "A migration script was being run during the session (transient, ephemeral step).",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "short"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Refactoring the FastAPI module for improved testability suggests the current structure may not be easily unit-testable (e.g., tightly coupled DB sessions or middleware).",
+      "type": "insight",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Using idempotency keys on transactions is a strong design choice for financial reliability, preventing duplicate transfer processing.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The partial index on transactions WHERE status != 'settled' optimizes queries on active/pending transactions, keeping the index small as settled transactions accumulate.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Storing amounts as integer cents (BIGINT) avoids floating-point precision issues common in financial systems.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "FastAPI's async support aligns well with high-throughput fintech workloads compared to synchronous Flask.",
+      "type": "hypothesis",
+      "temporal_class": "long"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "Flask",
+      "type": "replaces",
+      "description": "FastAPI was chosen to replace Flask for better async support in the backend."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "FastAPI",
+      "type": "part_of",
+      "description": "AuthMiddleware is a JWT authentication middleware implemented for FastAPI."
+    },
+    {
+      "from": "AuthMiddleware",
+      "to": "JWT",
+      "type": "uses",
+      "description": "AuthMiddleware decodes JWT tokens using the HS256 algorithm."
+    },
+    {
+      "from": "transactions table",
+      "to": "PostgreSQL",
+      "type": "part_of",
+      "description": "The transactions table is defined in the PostgreSQL database schema."
+    },
+    {
+      "from": "transactions table",
+      "to": "accounts table",
+      "type": "depends_on",
+      "description": "Transactions reference accounts via source_account_id and dest_account_id foreign keys."
+    },
+    {
+      "from": "API service",
+      "to": "PostgreSQL",
+      "type": "depends_on",
+      "description": "The API service depends on the PostgreSQL database as specified in Docker Compose."
+    },
+    {
+      "from": "API service",
+      "to": "Redis",
+      "type": "depends_on",
+      "description": "The API service depends on Redis as specified in Docker Compose."
+    },
+    {
+      "from": "API service",
+      "to": "Stripe",
+      "type": "uses",
+      "description": "The API integrates with Stripe via a secret key environment variable."
+    },
+    {
+      "from": "useTransactions hook",
+      "to": "TanStack React Query",
+      "type": "uses",
+      "description": "useTransactions uses TanStack React Query's useQuery to fetch transaction data."
+    },
+    {
+      "from": "useTransfer hook",
+      "to": "TanStack React Query",
+      "type": "uses",
+      "description": "useTransfer uses TanStack React Query's useMutation to post transfer requests."
+    },
+    {
+      "from": "process_transaction function",
+      "to": "LedgerEntry",
+      "type": "leads_to",
+      "description": "process_transaction validates a transaction and writes a LedgerEntry to the database."
+    },
+    {
+      "from": "process_transaction function",
+      "to": "transactions table",
+      "type": "uses",
+      "description": "Transaction processing writes ledger entries aligned with the transactions schema."
+    },
+    {
+      "from": "UUID migration",
+      "to": "reliability and compliance",
+      "type": "defined_by",
+      "description": "The decision to migrate the DB schema to UUIDs was driven by reliability and compliance requirements."
+    },
+    {
+      "from": "idempotency_key",
+      "to": "transactions table",
+      "type": "part_of",
+      "description": "The idempotency_key is a unique column in the transactions table to prevent duplicate processing."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Migrate backend from Flask to FastAPI for better async support.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Database schema migrated to use UUIDs as primary keys, driven by reliability and compliance requirements.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Refactor the FastAPI module to improve testability.",
+      "temporal_class": "medium"
+    }
+  ],
+  "open_questions": [
+    "What is the full scope of the FastAPI module refactor for testability \u2014 which components need to change?",
+    "What currencies are included in SUPPORTED_CURRENCIES for transaction validation?",
+    "What is the complete accounts table schema that transactions reference?",
+    "How is Redis being used in this application (caching, sessions, queues)?",
+    "What is the PostgreSQL integration approach \u2014 raw SQL, SQLAlchemy ORM, or another library?"
+  ],
+  "entities": [
+    "FastAPI",
+    "Flask",
+    "PostgreSQL",
+    "Redis",
+    "Stripe",
+    "AuthMiddleware",
+    "TanStack React Query",
+    "JWT",
+    "LedgerEntry",
+    "Docker Compose",
+    "transactions table",
+    "useTransactions hook",
+    "useTransfer hook",
+    "process_transaction function"
+  ]
+}

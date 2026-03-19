@@ -12,7 +12,8 @@ session_end.py — Claude Code SessionEnd hook.
 Fires when a session terminates. Has a 1.5s default timeout, so we
 fork the extraction into a background process and exit immediately.
 
-Skips if extraction already ran for this session (lock file exists).
+Passes --final to the worker so it finalizes narratives and marks
+extraction complete.
 """
 from __future__ import annotations
 
@@ -24,9 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".claude"))
 
-from memory.ingest import _lock_path
+from memory.extraction_state import is_extraction_complete
 
-# The background worker script that actually runs extraction
 _WORKER = Path.home() / ".claude" / "hooks" / "_extract_worker.py"
 
 
@@ -39,22 +39,22 @@ def main(payload: dict) -> None:
     if not api_key or not transcript_path:
         sys.exit(0)
 
-    # Check if extraction already happened
-    if _lock_path(session_id).exists():
-        print(f"[session_end] Extraction already ran for {session_id[:12]}...", file=sys.stderr)
+    # Check if extraction already completed
+    if is_extraction_complete(session_id):
+        print(f"[session_end] Extraction already complete for {session_id[:12]}...", file=sys.stderr)
         sys.exit(0)
 
-    # Fire-and-forget: spawn detached background worker
+    # Fire-and-forget: spawn detached background worker with --final flag
     subprocess.Popen(
-        [sys.executable, str(_WORKER), session_id, transcript_path, cwd],
+        [sys.executable, str(_WORKER), session_id, transcript_path, cwd, "--final"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=open(Path.home() / ".claude" / "memory" / "extract.log", "a"),
-        start_new_session=True,  # detach from parent process group
+        start_new_session=True,
         env={**os.environ, "ANTHROPIC_API_KEY": api_key},
     )
 
-    print(f"[session_end] Background extraction started for {session_id[:12]}...", file=sys.stderr)
+    print(f"[session_end] Final extraction pass started for {session_id[:12]}...", file=sys.stderr)
 
 
 if __name__ == "__main__":

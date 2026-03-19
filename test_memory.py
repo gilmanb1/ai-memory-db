@@ -1187,27 +1187,30 @@ class TestScopeFilterSQL(unittest.TestCase):
     """
     GIVEN the _scope_filter helper
     WHEN called with different scope values
-    THEN the correct SQL WHERE fragment is generated
+    THEN a parameterized (sql, params) tuple is returned
     """
 
-    def test_given_none_scope_then_returns_empty_string(self):
-        result = db._scope_filter(None)
-        self.assertEqual(result, "")
+    def test_given_none_scope_then_returns_empty(self):
+        sql, params = db._scope_filter(None)
+        self.assertEqual(sql, "")
+        self.assertEqual(params, [])
 
-    def test_given_project_scope_then_returns_project_or_global_filter(self):
-        result = db._scope_filter("/Users/dev/projects/alpha")
-        self.assertIn("/Users/dev/projects/alpha", result)
-        self.assertIn("__global__", result)
-        self.assertIn("OR", result)
+    def test_given_project_scope_then_returns_parameterized_filter(self):
+        sql, params = db._scope_filter("/Users/dev/projects/alpha")
+        self.assertIn("?", sql)
+        self.assertIn("OR", sql)
+        self.assertIn("/Users/dev/projects/alpha", params)
+        self.assertIn("__global__", params)
 
-    def test_given_global_scope_then_returns_global_or_global_filter(self):
-        result = db._scope_filter("__global__")
-        self.assertIn("__global__", result)
+    def test_given_global_scope_then_returns_parameterized_filter(self):
+        sql, params = db._scope_filter("__global__")
+        self.assertIn("__global__", params)
 
-    def test_given_scope_with_quotes_then_quotes_are_escaped(self):
-        result = db._scope_filter("/Users/o'brien/projects/test")
-        self.assertIn("o''brien", result)
-        self.assertNotIn("o'brien", result.replace("o''brien", ""))
+    def test_given_scope_with_quotes_then_not_inline_escaped(self):
+        sql, params = db._scope_filter("/Users/o'brien/projects/test")
+        # Quotes should be in params, NOT escaped in SQL
+        self.assertNotIn("o''brien", sql)
+        self.assertIn("/Users/o'brien/projects/test", params)
 
 
 class TestEmbeddingsWarnOnce(unittest.TestCase):
@@ -1623,6 +1626,1352 @@ class TestSchemaMigration3(unittest.TestCase):
             "SELECT column_name FROM information_schema.columns WHERE table_name='open_questions'"
         ).fetchall()}
         self.assertIn("deactivated_at", cols)
+
+
+class TestMemoryRouting(unittest.TestCase):
+    """
+    GIVEN various /remember inputs
+    WHEN the routing classifier analyzes the text
+    THEN it routes to the correct storage system(s)
+    """
+
+    def test_given_behavioral_preference_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("I prefer tabs over spaces")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_correction_with_always_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("always run tests before committing")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_correction_with_never_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("never mock the database in integration tests")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_correction_with_dont_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("don't summarize what you just did")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_stop_directive_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("stop adding docstrings to code I didn't ask you to change")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_user_role_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("I am a data scientist working on ML pipelines")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_user_expertise_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("I'm new to React but experienced with Go")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_user_background_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("my background is in distributed systems")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_external_reference_url_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("the API docs are at https://docs.example.com/api")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_external_reference_system_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("bugs are tracked in the Linear project INGEST")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_project_deadline_then_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("merge freeze starts Thursday for the mobile release")
+        self.assertEqual(result["route"], "both")
+
+    def test_given_technical_fact_then_routes_to_duckdb(self):
+        from memory.routing import classify_memory
+        result = classify_memory("DuckDB uses columnar storage for analytics workloads")
+        self.assertEqual(result["route"], "duckdb")
+
+    def test_given_architecture_detail_then_routes_to_duckdb(self):
+        from memory.routing import classify_memory
+        result = classify_memory("the auth service communicates with the gateway over gRPC")
+        self.assertEqual(result["route"], "duckdb")
+
+    def test_given_simple_fact_then_routes_to_duckdb(self):
+        from memory.routing import classify_memory
+        result = classify_memory("the project uses Python 3.11")
+        self.assertEqual(result["route"], "duckdb")
+
+    def test_feedback_classified_as_feedback_type(self):
+        from memory.routing import classify_memory
+        result = classify_memory("always write tests in BDD style")
+        self.assertEqual(result["auto_type"], "feedback")
+
+    def test_user_role_classified_as_user_type(self):
+        from memory.routing import classify_memory
+        result = classify_memory("I am a senior backend engineer")
+        self.assertEqual(result["auto_type"], "user")
+
+    def test_reference_classified_as_reference_type(self):
+        from memory.routing import classify_memory
+        result = classify_memory("bugs are tracked in Linear project INGEST")
+        self.assertEqual(result["auto_type"], "reference")
+
+    def test_project_context_classified_as_project_type(self):
+        from memory.routing import classify_memory
+        result = classify_memory("we're freezing merges after Thursday for the release")
+        self.assertEqual(result["auto_type"], "project")
+
+    def test_technical_fact_has_no_auto_type(self):
+        from memory.routing import classify_memory
+        result = classify_memory("the API returns JSON with pagination cursors")
+        self.assertIsNone(result["auto_type"])
+
+    def test_result_includes_reason(self):
+        from memory.routing import classify_memory
+        result = classify_memory("never use force push on main")
+        self.assertIn("reason", result)
+        self.assertTrue(len(result["reason"]) > 0)
+
+    def test_avoid_directive_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("avoid using mocks for database tests")
+        self.assertEqual(result["route"], "both")
+
+    def test_instead_correction_routes_to_both(self):
+        from memory.routing import classify_memory
+        result = classify_memory("instead of summarizing, just show the diff")
+        self.assertEqual(result["route"], "both")
+
+
+class TestAutoMemoryWrite(unittest.TestCase):
+    """
+    GIVEN a memory classified for auto-memory
+    WHEN writing to the auto-memory system
+    THEN proper markdown file is created and MEMORY.md is updated
+    """
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.memory_dir = self.tmpdir / "memory"
+        self.memory_dir.mkdir()
+        # Create an initial MEMORY.md
+        (self.memory_dir / "MEMORY.md").write_text("# Memory Index\n\n")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_creates_memory_file_with_frontmatter(self):
+        from memory.routing import write_auto_memory
+        write_auto_memory(
+            text="always write tests before implementation",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        md_files = list(self.memory_dir.glob("feedback_*.md"))
+        self.assertGreater(len(md_files), 0)
+        content = md_files[0].read_text()
+        self.assertIn("---", content)
+        self.assertIn("type: feedback", content)
+
+    def test_updates_memory_index(self):
+        from memory.routing import write_auto_memory
+        write_auto_memory(
+            text="I am a backend engineer",
+            auto_type="user",
+            memory_dir=self.memory_dir,
+        )
+        index = (self.memory_dir / "MEMORY.md").read_text()
+        self.assertIn("backend engineer", index.lower())
+
+    def test_file_contains_memory_text(self):
+        from memory.routing import write_auto_memory
+        write_auto_memory(
+            text="bugs are tracked in Linear project INGEST",
+            auto_type="reference",
+            memory_dir=self.memory_dir,
+        )
+        md_files = list(self.memory_dir.glob("reference_*.md"))
+        content = md_files[0].read_text()
+        self.assertIn("Linear project INGEST", content)
+
+    def test_deduplicates_by_overwriting_same_slug(self):
+        from memory.routing import write_auto_memory
+        write_auto_memory(
+            text="I prefer tabs over spaces",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        write_auto_memory(
+            text="I prefer tabs over spaces for all files",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        # Should still only have one feedback file with similar slug
+        md_files = list(self.memory_dir.glob("feedback_*.md"))
+        # May have 1 or 2 files depending on slug collision, but index should not have dupes
+        index = (self.memory_dir / "MEMORY.md").read_text()
+        lines = [l for l in index.strip().split("\n") if l.startswith("- [")]
+        # No duplicate filenames in index
+        filenames = [l.split("](")[0] for l in lines]
+        self.assertEqual(len(filenames), len(set(filenames)))
+
+    def test_respects_budget_with_many_entries(self):
+        from memory.routing import write_auto_memory
+        # Write 200 entries to try to exceed the budget
+        for i in range(200):
+            write_auto_memory(
+                text=f"Feedback rule number {i}: always do thing {i}",
+                auto_type="feedback",
+                memory_dir=self.memory_dir,
+            )
+        index = (self.memory_dir / "MEMORY.md").read_text()
+        line_count = len(index.strip().split("\n"))
+        self.assertLessEqual(line_count, 200)
+
+    def test_project_type_includes_date_context(self):
+        from memory.routing import write_auto_memory
+        write_auto_memory(
+            text="merge freeze starts 2026-03-20 for mobile release",
+            auto_type="project",
+            memory_dir=self.memory_dir,
+        )
+        md_files = list(self.memory_dir.glob("project_*.md"))
+        self.assertGreater(len(md_files), 0)
+        content = md_files[0].read_text()
+        self.assertIn("type: project", content)
+
+
+class TestRememberWithRouting(unittest.TestCase):
+    """
+    GIVEN the /remember command with routing enabled
+    WHEN storing a memory
+    THEN it routes to the correct system(s) and reports the routing
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        _cfg.DB_PATH = self.db_path
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.memory_dir = self.tmpdir / "memory"
+        self.memory_dir.mkdir()
+        (self.memory_dir / "MEMORY.md").write_text("# Memory Index\n\n")
+
+    def tearDown(self):
+        _cfg.DB_PATH = Path(tempfile.mktemp(suffix=".duckdb"))
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_feedback_then_stored_in_both_systems(self, mock_emb):
+        from memory.routing import classify_memory, write_auto_memory
+        text = "always interview me before building new features"
+        result = classify_memory(text)
+        self.assertEqual(result["route"], "both")
+
+        # Store in DuckDB
+        conn = db.get_connection(db_path=str(self.db_path))
+        emb = _mock_embed(text)
+        db.upsert_fact(conn, text, "personal", "long", "high", emb, "sess-1", _noop_decay)
+        conn.close()
+
+        # Store in auto-memory
+        write_auto_memory(text=text, auto_type=result["auto_type"], memory_dir=self.memory_dir)
+
+        # Verify DuckDB
+        conn = db.get_connection(db_path=str(self.db_path))
+        facts = db.get_facts_by_temporal(conn, "long", 10)
+        self.assertTrue(any("interview" in f["text"] for f in facts))
+        conn.close()
+
+        # Verify auto-memory
+        md_files = list(self.memory_dir.glob("feedback_*.md"))
+        self.assertGreater(len(md_files), 0)
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_given_technical_fact_then_stored_only_in_duckdb(self, mock_emb):
+        from memory.routing import classify_memory
+        text = "the service mesh uses Istio for traffic management"
+        result = classify_memory(text)
+        self.assertEqual(result["route"], "duckdb")
+        self.assertIsNone(result["auto_type"])
+
+    def test_debug_output_includes_routing_reason(self):
+        from memory.routing import classify_memory
+        result = classify_memory("never use var in JavaScript")
+        self.assertIn("reason", result)
+        self.assertTrue(len(result["reason"]) > 0)
+
+
+class TestForgetAutoMemoryCleanup(unittest.TestCase):
+    """
+    GIVEN a memory stored in both DuckDB and auto-memory
+    WHEN /forget soft-deletes it from DuckDB
+    THEN the corresponding auto-memory markdown file is also removed
+    AND the MEMORY.md index entry is removed
+    """
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.memory_dir = self.tmpdir / "memory"
+        self.memory_dir.mkdir()
+        (self.memory_dir / "MEMORY.md").write_text("# Memory Index\n\n")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_given_auto_memory_file_when_delete_then_file_removed(self):
+        from memory.routing import write_auto_memory, delete_auto_memory
+        filepath = write_auto_memory(
+            text="always write tests first",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        self.assertTrue(filepath.exists())
+        delete_auto_memory(filepath.name, self.memory_dir)
+        self.assertFalse(filepath.exists())
+
+    def test_given_auto_memory_file_when_delete_then_index_entry_removed(self):
+        from memory.routing import write_auto_memory, delete_auto_memory
+        filepath = write_auto_memory(
+            text="always write tests first",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        index = (self.memory_dir / "MEMORY.md").read_text()
+        self.assertIn(filepath.name, index)
+
+        delete_auto_memory(filepath.name, self.memory_dir)
+        index_after = (self.memory_dir / "MEMORY.md").read_text()
+        self.assertNotIn(filepath.name, index_after)
+
+    def test_given_nonexistent_file_when_delete_then_no_error(self):
+        from memory.routing import delete_auto_memory
+        # Should not raise
+        delete_auto_memory("nonexistent_file.md", self.memory_dir)
+
+    def test_given_multiple_entries_when_delete_one_then_others_remain(self):
+        from memory.routing import write_auto_memory, delete_auto_memory
+        fp1 = write_auto_memory(
+            text="always write tests first",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        fp2 = write_auto_memory(
+            text="I am a backend engineer",
+            auto_type="user",
+            memory_dir=self.memory_dir,
+        )
+        delete_auto_memory(fp1.name, self.memory_dir)
+        self.assertFalse(fp1.exists())
+        self.assertTrue(fp2.exists())
+        index = (self.memory_dir / "MEMORY.md").read_text()
+        self.assertNotIn(fp1.name, index)
+        self.assertIn(fp2.name, index)
+
+    def test_find_auto_memory_file_by_text(self):
+        from memory.routing import write_auto_memory, find_auto_memory_file
+        write_auto_memory(
+            text="always write tests first",
+            auto_type="feedback",
+            memory_dir=self.memory_dir,
+        )
+        found = find_auto_memory_file("always write tests first", self.memory_dir)
+        self.assertIsNotNone(found)
+        self.assertTrue(found.endswith(".md"))
+
+    def test_find_auto_memory_file_returns_none_for_unknown(self):
+        from memory.routing import find_auto_memory_file
+        found = find_auto_memory_file("something that was never stored", self.memory_dir)
+        self.assertIsNone(found)
+
+
+class TestPurgeDeletedInPipeline(unittest.TestCase):
+    """
+    GIVEN the extraction pipeline runs
+    WHEN it completes the decay pass
+    THEN purge_deleted is also called to clean up old soft-deleted items
+    """
+
+    def test_run_extraction_calls_purge_deleted(self):
+        """Verify that purge_deleted is called during the extraction pipeline."""
+        # We can't run the full pipeline (needs Claude API), so verify
+        # that the function is called by checking the ingest module source
+        import inspect
+        from memory import ingest
+        source = inspect.getsource(ingest.run_extraction)
+        self.assertIn("purge_deleted", source)
+
+
+class TestTextBasedDedup(unittest.TestCase):
+    """
+    GIVEN a fact stored without an embedding (Ollama was down)
+    WHEN the same fact is stored again with an embedding
+    THEN the existing fact is reinforced instead of creating a duplicate
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_given_fact_without_embedding_when_same_text_with_embedding_then_deduped(self):
+        # Store without embedding (Ollama down)
+        fid1, is_new1 = db.upsert_fact(
+            self.conn, "The API uses gRPC for communication",
+            "technical", "long", "high", None, "sess-1", _noop_decay
+        )
+        self.assertTrue(is_new1)
+
+        # Store same text with embedding (Ollama back up)
+        emb = _mock_embed("The API uses gRPC for communication")
+        fid2, is_new2 = db.upsert_fact(
+            self.conn, "The API uses gRPC for communication",
+            "technical", "long", "high", emb, "sess-1", _noop_decay
+        )
+        self.assertFalse(is_new2)
+        self.assertEqual(fid1, fid2)
+
+    def test_given_fact_without_embedding_when_different_text_then_not_deduped(self):
+        fid1, _ = db.upsert_fact(
+            self.conn, "The API uses gRPC",
+            "technical", "long", "high", None, "sess-1", _noop_decay
+        )
+        emb = _mock_embed("DuckDB is great for analytics")
+        fid2, is_new2 = db.upsert_fact(
+            self.conn, "DuckDB is great for analytics",
+            "technical", "long", "high", emb, "sess-1", _noop_decay
+        )
+        self.assertTrue(is_new2)
+        self.assertNotEqual(fid1, fid2)
+
+    def test_given_both_without_embeddings_when_same_text_then_deduped(self):
+        fid1, is_new1 = db.upsert_fact(
+            self.conn, "Python is dynamically typed",
+            "technical", "short", "medium", None, "sess-1", _noop_decay
+        )
+        fid2, is_new2 = db.upsert_fact(
+            self.conn, "Python is dynamically typed",
+            "technical", "short", "medium", None, "sess-1", _noop_decay
+        )
+        self.assertTrue(is_new1)
+        self.assertFalse(is_new2)
+        self.assertEqual(fid1, fid2)
+
+    def test_given_idea_without_embedding_when_same_text_then_deduped(self):
+        iid1, is_new1 = db.upsert_idea(
+            self.conn, "Consider using Redis for caching",
+            "proposal", "medium", None, "sess-1", _noop_decay
+        )
+        emb = _mock_embed("Consider using Redis for caching")
+        iid2, is_new2 = db.upsert_idea(
+            self.conn, "Consider using Redis for caching",
+            "proposal", "medium", emb, "sess-1", _noop_decay
+        )
+        self.assertFalse(is_new2)
+        self.assertEqual(iid1, iid2)
+
+    def test_given_decision_without_embedding_when_same_text_then_deduped(self):
+        did1, is_new1 = db.upsert_decision(
+            self.conn, "Use PostgreSQL for the main database",
+            "long", None, "sess-1", _noop_decay
+        )
+        emb = _mock_embed("Use PostgreSQL for the main database")
+        did2, is_new2 = db.upsert_decision(
+            self.conn, "Use PostgreSQL for the main database",
+            "long", emb, "sess-1", _noop_decay
+        )
+        self.assertFalse(is_new2)
+        self.assertEqual(did1, did2)
+
+    def test_given_fact_without_embedding_when_deduped_then_embedding_backfilled(self):
+        """When deduping against a null-embedding fact, backfill the embedding."""
+        fid1, _ = db.upsert_fact(
+            self.conn, "The service uses Kafka for events",
+            "technical", "long", "high", None, "sess-1", _noop_decay
+        )
+        # Verify no embedding
+        row = self.conn.execute("SELECT embedding FROM facts WHERE id=?", [fid1]).fetchone()
+        self.assertIsNone(row[0])
+
+        # Re-store with embedding
+        emb = _mock_embed("The service uses Kafka for events")
+        db.upsert_fact(
+            self.conn, "The service uses Kafka for events",
+            "technical", "long", "high", emb, "sess-1", _noop_decay
+        )
+        # Verify embedding was backfilled
+        row = self.conn.execute("SELECT embedding FROM facts WHERE id=?", [fid1]).fetchone()
+        self.assertIsNotNone(row[0])
+
+    def test_given_fact_without_embedding_when_deduped_then_session_count_incremented(self):
+        fid1, _ = db.upsert_fact(
+            self.conn, "Exact text match dedup test",
+            "technical", "short", "medium", None, "sess-1", _noop_decay
+        )
+        db.upsert_fact(
+            self.conn, "Exact text match dedup test",
+            "technical", "short", "medium", None, "sess-1", _noop_decay
+        )
+        row = self.conn.execute("SELECT session_count FROM facts WHERE id=?", [fid1]).fetchone()
+        self.assertEqual(row[0], 2)
+
+
+class TestScopeFilterParameterized(unittest.TestCase):
+    """
+    GIVEN the _scope_filter helper
+    WHEN called with scope values (including adversarial ones)
+    THEN it returns parameterized SQL (no inline string values)
+    """
+
+    def test_scope_filter_returns_tuple(self):
+        result = db._scope_filter("/Users/dev/project")
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+
+    def test_scope_filter_tuple_has_sql_and_params(self):
+        sql, params = db._scope_filter("/Users/dev/project")
+        self.assertIsInstance(sql, str)
+        self.assertIsInstance(params, list)
+
+    def test_scope_filter_none_returns_empty(self):
+        sql, params = db._scope_filter(None)
+        self.assertEqual(sql, "")
+        self.assertEqual(params, [])
+
+    def test_scope_filter_uses_placeholders_not_inline_values(self):
+        sql, params = db._scope_filter("/Users/dev/project")
+        # Should use ? placeholders, NOT inline string values
+        self.assertNotIn("/Users/dev/project", sql)
+        self.assertIn("?", sql)
+        self.assertIn("/Users/dev/project", params)
+
+    def test_scope_filter_adversarial_path_not_in_sql(self):
+        evil_scope = "/path'; DROP TABLE facts; --"
+        sql, params = db._scope_filter(evil_scope)
+        self.assertNotIn("DROP", sql)
+        self.assertNotIn(evil_scope, sql)
+        self.assertIn(evil_scope, params)
+
+    def test_scope_filter_includes_global(self):
+        from memory.config import GLOBAL_SCOPE
+        sql, params = db._scope_filter("/some/project")
+        self.assertIn(GLOBAL_SCOPE, params)
+
+    def test_scope_filter_works_in_query(self):
+        """Integration test: parameterized scope filter works in actual SQL."""
+        db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        conn = fresh_conn(db_path)
+        db.upsert_session(conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+        emb = _mock_embed("Scoped fact test parameterized")
+        db.upsert_fact(conn, "Scoped fact test parameterized",
+                       "technical", "long", "high", emb, "sess-1", _noop_decay,
+                       scope="/Users/dev/project")
+        facts = db.get_facts_by_temporal(conn, "long", 10, scope="/Users/dev/project")
+        self.assertTrue(any("Scoped fact" in f["text"] for f in facts))
+        conn.close()
+        try:
+            db_path.unlink()
+        except Exception:
+            pass
+
+
+class TestConnectionSafety(unittest.TestCase):
+    """
+    GIVEN hook code that opens DB connections
+    WHEN an exception occurs during DB operations
+    THEN the connection is still properly closed (try/finally)
+    """
+
+    def test_handle_remember_has_finally_for_connection(self):
+        """Verify _handle_remember uses try/finally for connection."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "user_prompt_submit",
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        import inspect
+        source = inspect.getsource(mod._handle_remember)
+        # Should have a try/finally pattern around the connection
+        self.assertIn("finally", source)
+        self.assertIn("conn.close()", source)
+
+    def test_recall_path_has_finally_for_connection(self):
+        """Verify the recall path in main() uses try/finally for connection."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "user_prompt_submit",
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        import inspect
+        source = inspect.getsource(mod.main)
+        # The conn = get_connection / conn.close() should be in a finally
+        # Count that "finally" appears at least once after "get_connection"
+        idx_conn = source.find("get_connection")
+        idx_finally = source.find("finally", idx_conn)
+        self.assertGreater(idx_finally, idx_conn)
+
+    def test_session_start_has_finally_for_connection(self):
+        """Verify session_start.py uses try/finally for connection."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "session_start",
+            str(PROJECT_ROOT / "hooks" / "session_start.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        import inspect
+        source = inspect.getsource(mod.main)
+        self.assertIn("finally", source)
+
+
+class TestTextDedupScopeAware(unittest.TestCase):
+    """
+    GIVEN facts stored in different project scopes
+    WHEN text-based dedup runs for one scope
+    THEN it only deduplicates within the same scope (or global)
+    AND does not cross-pollinate between projects
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_given_fact_in_scope_a_when_same_text_in_scope_b_then_not_deduped(self):
+        fid1, is_new1 = db.upsert_fact(
+            self.conn, "Build succeeded",
+            "contextual", "short", "medium", None, "sess-1", _noop_decay,
+            scope="/projects/alpha"
+        )
+        fid2, is_new2 = db.upsert_fact(
+            self.conn, "Build succeeded",
+            "contextual", "short", "medium", None, "sess-1", _noop_decay,
+            scope="/projects/beta"
+        )
+        self.assertTrue(is_new1)
+        self.assertTrue(is_new2)
+        self.assertNotEqual(fid1, fid2)
+
+    def test_given_fact_in_scope_a_when_same_text_in_scope_a_then_deduped(self):
+        fid1, is_new1 = db.upsert_fact(
+            self.conn, "Tests pass on CI",
+            "contextual", "short", "medium", None, "sess-1", _noop_decay,
+            scope="/projects/alpha"
+        )
+        fid2, is_new2 = db.upsert_fact(
+            self.conn, "Tests pass on CI",
+            "contextual", "short", "medium", None, "sess-1", _noop_decay,
+            scope="/projects/alpha"
+        )
+        self.assertFalse(is_new2)
+        self.assertEqual(fid1, fid2)
+
+    def test_given_global_fact_when_same_text_in_any_scope_then_deduped(self):
+        from memory.config import GLOBAL_SCOPE
+        fid1, _ = db.upsert_fact(
+            self.conn, "Global fact for dedup",
+            "personal", "long", "high", None, "sess-1", _noop_decay,
+            scope=GLOBAL_SCOPE
+        )
+        fid2, is_new2 = db.upsert_fact(
+            self.conn, "Global fact for dedup",
+            "personal", "long", "high", None, "sess-1", _noop_decay,
+            scope="/projects/alpha"
+        )
+        self.assertFalse(is_new2)
+        self.assertEqual(fid1, fid2)
+
+    def test_given_idea_in_scope_a_when_same_text_in_scope_b_then_not_deduped(self):
+        iid1, is_new1 = db.upsert_idea(
+            self.conn, "Consider adding caching",
+            "proposal", "medium", None, "sess-1", _noop_decay,
+            scope="/projects/alpha"
+        )
+        iid2, is_new2 = db.upsert_idea(
+            self.conn, "Consider adding caching",
+            "proposal", "medium", None, "sess-1", _noop_decay,
+            scope="/projects/beta"
+        )
+        self.assertTrue(is_new1)
+        self.assertTrue(is_new2)
+        self.assertNotEqual(iid1, iid2)
+
+    def test_given_decision_in_scope_a_when_same_text_in_scope_b_then_not_deduped(self):
+        did1, is_new1 = db.upsert_decision(
+            self.conn, "Use Redis for caching",
+            "long", None, "sess-1", _noop_decay,
+            scope="/projects/alpha"
+        )
+        did2, is_new2 = db.upsert_decision(
+            self.conn, "Use Redis for caching",
+            "long", None, "sess-1", _noop_decay,
+            scope="/projects/beta"
+        )
+        self.assertTrue(is_new1)
+        self.assertTrue(is_new2)
+        self.assertNotEqual(did1, did2)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Migration 4 / Incremental Extraction Foundation Tests
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestSchemaMigration4(unittest.TestCase):
+    """
+    GIVEN a database after migration 4
+    WHEN checking schema
+    THEN session_narratives table exists and superseded_by columns are present
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_session_narratives_table_exists(self):
+        tables = {r[0] for r in self.conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='main'"
+        ).fetchall()}
+        self.assertIn("session_narratives", tables)
+
+    def test_facts_has_superseded_by_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='facts'"
+        ).fetchall()}
+        self.assertIn("superseded_by", cols)
+
+    def test_ideas_has_superseded_by_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='ideas'"
+        ).fetchall()}
+        self.assertIn("superseded_by", cols)
+
+    def test_decisions_has_superseded_by_column(self):
+        cols = {r[0] for r in self.conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='decisions'"
+        ).fetchall()}
+        self.assertIn("superseded_by", cols)
+
+    def test_migration_4_idempotent(self):
+        db._run_migrations(self.conn)
+        db._run_migrations(self.conn)
+        count = self.conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+        self.assertEqual(count, len(db.MIGRATIONS))
+
+
+class TestSupersedeItem(_ScopedTestBase):
+    """
+    GIVEN an active fact in the database
+    WHEN supersede_item is called with a replacement ID
+    THEN the old fact is deactivated with superseded_by set to the new ID
+    """
+
+    def test_given_active_fact_when_superseded_then_inactive(self):
+        emb_old = _mock_embed("Using PostgreSQL for primary storage")
+        old_id, _ = db.upsert_fact(
+            self.conn, "Using PostgreSQL for primary storage",
+            "technical", "long", "high", emb_old, "sess-1", _noop_decay,
+        )
+        emb_new = _mock_embed("Using DuckDB for primary storage")
+        new_id, _ = db.upsert_fact(
+            self.conn, "Using DuckDB for primary storage",
+            "technical", "long", "high", emb_new, "sess-1", _noop_decay,
+        )
+        result = db.supersede_item(self.conn, old_id, "facts", new_id, "Migrated to DuckDB")
+        self.assertTrue(result)
+        row = self.conn.execute(
+            "SELECT is_active, superseded_by FROM facts WHERE id=?", [old_id]
+        ).fetchone()
+        self.assertFalse(row[0])
+        self.assertEqual(row[1], new_id)
+
+    def test_given_superseded_fact_then_not_returned_in_search(self):
+        emb_old = _mock_embed("Old fact to supersede in search test")
+        old_id, _ = db.upsert_fact(
+            self.conn, "Old fact to supersede in search test",
+            "technical", "long", "high", emb_old, "sess-1", _noop_decay,
+        )
+        emb_new = _mock_embed("New replacement fact in search test")
+        new_id, _ = db.upsert_fact(
+            self.conn, "New replacement fact in search test",
+            "technical", "long", "high", emb_new, "sess-1", _noop_decay,
+        )
+        db.supersede_item(self.conn, old_id, "facts", new_id, "Replaced")
+        results = db.search_facts(self.conn, emb_old, limit=10, threshold=0.0)
+        result_ids = [r["id"] for r in results]
+        self.assertNotIn(old_id, result_ids)
+
+    def test_given_nonexistent_id_when_superseded_then_returns_false(self):
+        result = db.supersede_item(self.conn, "nonexistent-id", "facts", "new-id", "reason")
+        self.assertFalse(result)
+
+    def test_given_invalid_table_when_superseded_then_returns_false(self):
+        result = db.supersede_item(self.conn, "some-id", "invalid_table", "new-id", "reason")
+        self.assertFalse(result)
+
+    def test_given_active_decision_when_superseded_then_inactive(self):
+        emb = _mock_embed("Use Flask for the API framework")
+        old_id, _ = db.upsert_decision(
+            self.conn, "Use Flask for the API framework",
+            "long", emb, "sess-1", _noop_decay,
+        )
+        new_id, _ = db.upsert_decision(
+            self.conn, "Use FastAPI for the API framework",
+            "long", _mock_embed("Use FastAPI for the API framework"),
+            "sess-1", _noop_decay,
+        )
+        result = db.supersede_item(self.conn, old_id, "decisions", new_id, "Better async")
+        self.assertTrue(result)
+        row = self.conn.execute(
+            "SELECT is_active, superseded_by FROM decisions WHERE id=?", [old_id]
+        ).fetchone()
+        self.assertFalse(row[0])
+        self.assertEqual(row[1], new_id)
+
+    def test_given_active_idea_when_superseded_then_inactive(self):
+        emb = _mock_embed("Consider using Redis for caching layer")
+        old_id, _ = db.upsert_idea(
+            self.conn, "Consider using Redis for caching layer",
+            "proposal", "medium", emb, "sess-1", _noop_decay,
+        )
+        new_id, _ = db.upsert_idea(
+            self.conn, "Consider using Memcached instead of Redis",
+            "proposal", "medium", _mock_embed("Consider using Memcached instead of Redis"),
+            "sess-1", _noop_decay,
+        )
+        db.supersede_item(self.conn, old_id, "ideas", new_id, "Licensing")
+        row = self.conn.execute("SELECT is_active FROM ideas WHERE id=?", [old_id]).fetchone()
+        self.assertFalse(row[0])
+
+
+class TestNarrativeCRUD(_ScopedTestBase):
+    """
+    GIVEN the session_narratives table
+    WHEN narratives are inserted, updated, and finalized
+    THEN only the final narrative persists
+    """
+
+    def test_given_narrative_when_upserted_then_row_created(self):
+        nid = db.upsert_narrative(
+            self.conn, "sess-1", 1,
+            "User is building a REST API with PostgreSQL and FastAPI.",
+            embedding=None, is_final=False, scope="/test",
+        )
+        self.assertIsNotNone(nid)
+        row = self.conn.execute(
+            "SELECT narrative, is_final FROM session_narratives WHERE id=?", [nid]
+        ).fetchone()
+        self.assertIn("REST API", row[0])
+        self.assertFalse(row[1])
+
+    def test_given_same_session_pass_when_upserted_again_then_updated(self):
+        nid1 = db.upsert_narrative(self.conn, "sess-1", 1, "First version", None, False, "/test")
+        nid2 = db.upsert_narrative(self.conn, "sess-1", 1, "Updated version", None, False, "/test")
+        self.assertEqual(nid1, nid2)
+        row = self.conn.execute(
+            "SELECT narrative FROM session_narratives WHERE id=?", [nid1]
+        ).fetchone()
+        self.assertEqual(row[0], "Updated version")
+
+    def test_given_three_passes_when_finalized_then_only_final_kept(self):
+        db.upsert_narrative(self.conn, "sess-1", 1, "Pass 1 narrative", None, False, "/test")
+        db.upsert_narrative(self.conn, "sess-1", 2, "Pass 2 narrative", None, False, "/test")
+        db.upsert_narrative(self.conn, "sess-1", 3, "Pass 3 final narrative", None, False, "/test")
+
+        db.finalize_narratives(self.conn, "sess-1")
+
+        rows = self.conn.execute(
+            "SELECT pass_number, is_final FROM session_narratives WHERE session_id='sess-1'"
+        ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], 3)
+        self.assertTrue(rows[0][1])
+
+    def test_given_no_narratives_when_finalized_then_no_error(self):
+        db.finalize_narratives(self.conn, "nonexistent-session")
+
+    def test_given_single_narrative_when_finalized_then_marked_final(self):
+        db.upsert_narrative(self.conn, "sess-2", 1, "Only narrative", None, False, "/test")
+        db.finalize_narratives(self.conn, "sess-2")
+        row = self.conn.execute(
+            "SELECT is_final FROM session_narratives WHERE session_id='sess-2'"
+        ).fetchone()
+        self.assertTrue(row[0])
+
+
+class TestGetItemsByIds(_ScopedTestBase):
+    """
+    GIVEN items stored in the database
+    WHEN get_items_by_ids is called with their IDs
+    THEN the correct items are returned with text and table info
+    """
+
+    def test_given_facts_and_decisions_when_fetched_by_ids_then_returned(self):
+        emb_f = _mock_embed("Fact for get_items_by_ids test")
+        fid, _ = db.upsert_fact(
+            self.conn, "Fact for get_items_by_ids test",
+            "technical", "long", "high", emb_f, "sess-1", _noop_decay,
+        )
+        emb_d = _mock_embed("Decision for get_items_by_ids test")
+        did, _ = db.upsert_decision(
+            self.conn, "Decision for get_items_by_ids test",
+            "long", emb_d, "sess-1", _noop_decay,
+        )
+        results = db.get_items_by_ids(self.conn, {
+            "facts": [fid],
+            "decisions": [did],
+        })
+        self.assertEqual(len(results), 2)
+        tables = {r["table"] for r in results}
+        self.assertIn("facts", tables)
+        self.assertIn("decisions", tables)
+
+    def test_given_empty_ids_when_fetched_then_empty_list(self):
+        results = db.get_items_by_ids(self.conn, {"facts": [], "ideas": []})
+        self.assertEqual(results, [])
+
+    def test_given_invalid_table_when_fetched_then_skipped(self):
+        results = db.get_items_by_ids(self.conn, {"nonexistent_table": ["some-id"]})
+        self.assertEqual(results, [])
+
+
+class TestExtractionStateModule(unittest.TestCase):
+    """
+    GIVEN the extraction_state module
+    WHEN saving, loading, and managing state and locks
+    THEN operations are correct and atomic
+    """
+
+    def test_save_and_load_round_trip(self):
+        from memory.extraction_state import save_state, load_state, delete_state
+        state = {
+            "session_id": "test-unit-state",
+            "pass_count": 2,
+            "last_byte_offset": 12345,
+            "last_narrative": "Test narrative content",
+            "prior_item_ids": {"facts": ["id1", "id2"], "ideas": [], "decisions": ["id3"]},
+            "recalled_item_ids": ["id4"],
+        }
+        try:
+            save_state("test-unit-state", state)
+            loaded = load_state("test-unit-state")
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["pass_count"], 2)
+            self.assertEqual(loaded["last_byte_offset"], 12345)
+            self.assertEqual(loaded["last_narrative"], "Test narrative content")
+            self.assertEqual(loaded["prior_item_ids"]["facts"], ["id1", "id2"])
+        finally:
+            delete_state("test-unit-state")
+
+    def test_load_missing_state_returns_none(self):
+        from memory.extraction_state import load_state
+        result = load_state("nonexistent-session-987654")
+        self.assertIsNone(result)
+
+    def test_delete_state_is_idempotent(self):
+        from memory.extraction_state import delete_state
+        delete_state("already-deleted-session")  # should not raise
+
+    def test_running_lock_acquire_and_release(self):
+        from memory.extraction_state import acquire_running_lock, release_running_lock
+        try:
+            self.assertTrue(acquire_running_lock("test-lock-unit"))
+            self.assertFalse(acquire_running_lock("test-lock-unit"))
+            release_running_lock("test-lock-unit")
+            self.assertTrue(acquire_running_lock("test-lock-unit"))
+        finally:
+            release_running_lock("test-lock-unit")
+
+    def test_complete_lock_and_check(self):
+        from memory.extraction_state import (
+            mark_extraction_complete, is_extraction_complete,
+        )
+        sid = f"test-complete-{time.time()}"
+        self.assertFalse(is_extraction_complete(sid))
+        mark_extraction_complete(sid)
+        self.assertTrue(is_extraction_complete(sid))
+        # Cleanup
+        from memory.extraction_state import _complete_lock_path
+        try:
+            _complete_lock_path(sid).unlink()
+        except FileNotFoundError:
+            pass
+
+    def test_sanitize_session_id(self):
+        from memory.extraction_state import _sanitize_id
+        self.assertNotIn("/", _sanitize_id("abc/def"))
+        self.assertNotIn("..", _sanitize_id("abc..def"))
+
+    def test_recall_cache_round_trip(self):
+        from memory.extraction_state import (
+            save_recall_cache, load_recall_cache, delete_recall_cache,
+        )
+        items = [
+            {"id": "uuid1", "text": "A fact", "table": "facts"},
+            {"id": "uuid2", "text": "A decision", "table": "decisions"},
+        ]
+        try:
+            save_recall_cache("test-recall-cache", items)
+            loaded = load_recall_cache("test-recall-cache")
+            self.assertIsNotNone(loaded)
+            self.assertEqual(len(loaded), 2)
+            self.assertEqual(loaded[0]["id"], "uuid1")
+        finally:
+            delete_recall_cache("test-recall-cache")
+
+    def test_load_missing_recall_cache_returns_none(self):
+        from memory.extraction_state import load_recall_cache
+        result = load_recall_cache("nonexistent-recall-cache-123")
+        self.assertIsNone(result)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Delta Parsing + Incremental Tool Tests
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestDeltaTranscriptParsing(unittest.TestCase):
+    """
+    GIVEN a JSONL transcript file
+    WHEN parsing from a byte offset
+    THEN only messages after that offset are returned
+    """
+
+    def _write_jsonl(self, entries):
+        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        for e in entries:
+            f.write(json.dumps(e) + "\n")
+        f.close()
+        return f.name
+
+    def _entry(self, role, text):
+        return {
+            "type": role,
+            "message": {"role": role, "content": text if role == "user" else [{"type": "text", "text": text}]},
+            "timestamp": "2025-01-01T00:00:00Z",
+        }
+
+    def test_given_offset_zero_then_all_messages_returned(self):
+        entries = [self._entry("user", "Hello"), self._entry("assistant", "Hi!")]
+        path = self._write_jsonl(entries)
+        msgs, offset = extract.parse_transcript_delta(path, 0)
+        self.assertEqual(len(msgs), 2)
+        self.assertGreater(offset, 0)
+        Path(path).unlink()
+
+    def test_given_offset_zero_then_matches_full_parse(self):
+        entries = [
+            self._entry("user", "Hello"),
+            self._entry("assistant", "Hi!"),
+            self._entry("user", "How are you?"),
+        ]
+        path = self._write_jsonl(entries)
+        full = extract.parse_transcript(path)
+        delta, _ = extract.parse_transcript_delta(path, 0)
+        self.assertEqual(len(delta), len(full))
+        Path(path).unlink()
+
+    def test_given_mid_offset_then_returns_remaining_messages(self):
+        entries = [
+            self._entry("user", "First"),
+            self._entry("assistant", "Response1"),
+            self._entry("user", "Second"),
+            self._entry("assistant", "Response2"),
+        ]
+        path = self._write_jsonl(entries)
+        # Read first 2 lines to get offset
+        with open(path, "rb") as fh:
+            fh.readline()
+            fh.readline()
+            mid = fh.tell()
+        msgs, end = extract.parse_transcript_delta(path, mid)
+        self.assertEqual(len(msgs), 2)
+        self.assertEqual(msgs[0]["text"], "Second")
+        self.assertGreater(end, mid)
+        Path(path).unlink()
+
+    def test_given_end_offset_then_returns_empty(self):
+        entries = [self._entry("user", "Hello")]
+        path = self._write_jsonl(entries)
+        size = Path(path).stat().st_size
+        msgs, offset = extract.parse_transcript_delta(path, size)
+        self.assertEqual(len(msgs), 0)
+        self.assertEqual(offset, size)
+        Path(path).unlink()
+
+    def test_given_nonexistent_file_then_returns_empty(self):
+        msgs, offset = extract.parse_transcript_delta("/nonexistent/path.jsonl", 0)
+        self.assertEqual(len(msgs), 0)
+        self.assertEqual(offset, 0)
+
+
+class TestIsDeltaSubstantial(unittest.TestCase):
+    """
+    GIVEN a list of messages from a delta
+    WHEN checking if the delta is substantial
+    THEN tool-heavy deltas with few user messages return False
+    """
+
+    def test_given_only_tool_messages_then_not_substantial(self):
+        msgs = [
+            {"role": "assistant", "text": "[tool_use: Read]", "timestamp": ""},
+            {"role": "assistant", "text": "[tool_result: code here]", "timestamp": ""},
+        ]
+        self.assertFalse(extract.is_delta_substantial(msgs))
+
+    def test_given_enough_user_messages_then_substantial(self):
+        msgs = [
+            {"role": "user", "text": "First message", "timestamp": ""},
+            {"role": "user", "text": "Second message", "timestamp": ""},
+            {"role": "user", "text": "Third message", "timestamp": ""},
+        ]
+        self.assertTrue(extract.is_delta_substantial(msgs))
+
+    def test_given_few_but_long_user_messages_then_substantial(self):
+        msgs = [
+            {"role": "user", "text": "x" * 600, "timestamp": ""},
+        ]
+        self.assertTrue(extract.is_delta_substantial(msgs))
+
+    def test_given_empty_messages_then_not_substantial(self):
+        self.assertFalse(extract.is_delta_substantial([]))
+
+
+class TestIncrementalToolSchema(unittest.TestCase):
+    """
+    GIVEN the incremental extraction tool schema
+    WHEN inspecting its structure
+    THEN it has narrative_summary and supersedes fields
+    """
+
+    def test_has_narrative_summary_field(self):
+        props = extract.INCREMENTAL_EXTRACTION_TOOL["input_schema"]["properties"]
+        self.assertIn("narrative_summary", props)
+
+    def test_has_supersedes_field(self):
+        props = extract.INCREMENTAL_EXTRACTION_TOOL["input_schema"]["properties"]
+        self.assertIn("supersedes", props)
+
+    def test_supersedes_items_have_required_fields(self):
+        supersedes = extract.INCREMENTAL_EXTRACTION_TOOL["input_schema"]["properties"]["supersedes"]
+        item_props = supersedes["items"]["properties"]
+        self.assertIn("old_id", item_props)
+        self.assertIn("old_table", item_props)
+        self.assertIn("reason", item_props)
+
+    def test_supersedes_old_table_enum_matches_tables(self):
+        supersedes = extract.INCREMENTAL_EXTRACTION_TOOL["input_schema"]["properties"]["supersedes"]
+        enum = supersedes["items"]["properties"]["old_table"]["enum"]
+        for table in ["facts", "ideas", "decisions", "open_questions"]:
+            self.assertIn(table, enum)
+
+    def test_shares_structured_fields_with_extraction_tool(self):
+        """The incremental tool reuses fact/idea/decision schemas from the original."""
+        inc_props = extract.INCREMENTAL_EXTRACTION_TOOL["input_schema"]["properties"]
+        orig_props = extract.EXTRACTION_TOOL["input_schema"]["properties"]
+        for key in ["facts", "ideas", "relationships", "key_decisions", "open_questions", "entities"]:
+            self.assertEqual(inc_props[key], orig_props[key])
+
+
+class TestIncrementalPromptBuilding(unittest.TestCase):
+    """
+    GIVEN the incremental prompt builder
+    WHEN building user messages for pass 1 and pass 2+
+    THEN the message includes the correct sections
+    """
+
+    def test_pass1_no_prior_narrative(self):
+        msg = extract._build_incremental_user_message(
+            delta_text="User said hello",
+            prior_narrative=None,
+            existing_items=[{"id": "id1", "text": "An old fact", "table": "facts"}],
+            prior_items=None,
+        )
+        self.assertIn("EXISTING DATABASE ITEMS", msg)
+        self.assertIn("[fac-id1]", msg)
+        self.assertNotIn("PRIOR NARRATIVE", msg)
+        self.assertNotIn("PRIOR PASS ITEMS", msg)
+        self.assertIn("--- NEW CONVERSATION SEGMENT ---", msg)
+        self.assertIn("User said hello", msg)
+
+    def test_pass2_includes_prior_narrative(self):
+        msg = extract._build_incremental_user_message(
+            delta_text="Continue the discussion",
+            prior_narrative="Session is about building a REST API.",
+            existing_items=None,
+            prior_items=[{"id": "id2", "text": "Already extracted fact", "table": "facts"}],
+        )
+        self.assertIn("PRIOR NARRATIVE", msg)
+        self.assertIn("Session is about building a REST API.", msg)
+        self.assertIn("PRIOR PASS ITEMS", msg)
+        self.assertIn("[fac-id2]", msg)
+        self.assertNotIn("EXISTING DATABASE ITEMS", msg)
+
+    def test_pass_with_all_sections(self):
+        msg = extract._build_incremental_user_message(
+            delta_text="New conversation content",
+            prior_narrative="Prior summary here.",
+            existing_items=[{"id": "ex1", "text": "Existing", "table": "decisions"}],
+            prior_items=[{"id": "pr1", "text": "Prior item", "table": "ideas"}],
+        )
+        self.assertIn("EXISTING DATABASE ITEMS", msg)
+        self.assertIn("[dec-ex1]", msg)
+        self.assertIn("PRIOR PASS ITEMS", msg)
+        self.assertIn("[ide-pr1]", msg)
+        self.assertIn("PRIOR NARRATIVE", msg)
+        self.assertIn("--- NEW CONVERSATION SEGMENT ---", msg)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Narrative Recall + Incremental Pipeline Unit Tests
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestNarrativeInRecall(unittest.TestCase):
+    """
+    GIVEN narratives stored in the database
+    WHEN prompt_recall is called
+    THEN the result includes a 'narratives' key
+    AND session_recall does NOT include narratives
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    def test_prompt_recall_includes_narratives_key(self):
+        query_emb = _mock_embed("Tell me about the project")
+        ctx = recall.prompt_recall(self.conn, query_emb, "Tell me about the project")
+        self.assertIn("narratives", ctx)
+        self.assertIsInstance(ctx["narratives"], list)
+
+    def test_session_recall_excludes_narratives(self):
+        ctx = recall.session_recall(self.conn)
+        self.assertNotIn("narratives", ctx)
+
+    def test_format_prompt_context_includes_narrative_section(self):
+        # Seed a narrative with an embedding that will match
+        emb = _mock_embed("Building REST API with FastAPI and PostgreSQL")
+        db.upsert_narrative(
+            self.conn, "sess-1", 1,
+            "User is building a REST API with FastAPI and PostgreSQL for a fintech app.",
+            embedding=emb, is_final=True, scope=_cfg.GLOBAL_SCOPE,
+        )
+        ctx = recall.prompt_recall(self.conn, emb, "Tell me about the API")
+        formatted = recall.format_prompt_context(ctx)
+        self.assertIn("Related Session Context", formatted)
+
+    def test_format_prompt_context_no_narratives_when_empty(self):
+        query_emb = _mock_embed("some random query text")
+        ctx = recall.prompt_recall(self.conn, query_emb, "some random query")
+        # With no narratives in DB, the section shouldn't appear
+        formatted = recall.format_prompt_context(ctx)
+        self.assertNotIn("Related Session Context", formatted)
+
+
+class TestStoreStructuredItems(unittest.TestCase):
+    """
+    GIVEN the shared _store_structured_items function
+    WHEN storing extracted knowledge
+    THEN items are upserted and skip_embeddings prevents near-duplicates
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp", "/tmp/t.jsonl", 5, "Test")
+
+    def tearDown(self):
+        self.conn.close()
+        try:
+            self.db_path.unlink()
+        except Exception:
+            pass
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_stores_facts_and_returns_counts(self, mock_emb):
+        from memory.ingest import _store_structured_items
+        knowledge = {
+            "entities": ["TestEntity"],
+            "facts": [
+                {"text": "Fact one for store test", "category": "technical",
+                 "temporal_class": "long", "confidence": "high"},
+            ],
+            "ideas": [],
+            "relationships": [],
+            "key_decisions": [],
+            "open_questions": [],
+        }
+        counters, new_ids = _store_structured_items(
+            self.conn, knowledge, "sess-1", _cfg.GLOBAL_SCOPE,
+        )
+        self.assertEqual(counters["facts"], 1)
+        self.assertEqual(counters["entities"], 1)
+        self.assertEqual(len(new_ids["facts"]), 1)
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    def test_skip_embeddings_prevents_near_duplicates(self, mock_emb):
+        from memory.ingest import _store_structured_items
+        # Pre-compute what the embedding will be
+        skip_emb = _mock_embed("Fact to be skipped due to similarity")
+        knowledge = {
+            "entities": [],
+            "facts": [
+                {"text": "Fact to be skipped due to similarity", "category": "technical",
+                 "temporal_class": "long", "confidence": "high"},
+            ],
+            "ideas": [],
+            "relationships": [],
+            "key_decisions": [],
+            "open_questions": [],
+        }
+        counters, new_ids = _store_structured_items(
+            self.conn, knowledge, "sess-1", _cfg.GLOBAL_SCOPE,
+            skip_embeddings=[skip_emb],
+            dedup_threshold=0.85,
+        )
+        # The identical embedding should be skipped
+        self.assertEqual(counters["facts"], 0)
 
 
 if __name__ == "__main__":

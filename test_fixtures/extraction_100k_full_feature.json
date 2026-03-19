@@ -1,0 +1,350 @@
+{
+  "session_summary": "A wide-ranging debugging and architecture review session on a fintech application. The conversation covered the core tech stack (FastAPI, PostgreSQL, Redis/Memcached, Stripe, Celery, React with TanStack Query, AWS ECS Fargate), reviewed code for auth middleware, transaction processing, DB schema, and Docker Compose config. Several key architectural decisions were formally recorded, including replacing Redis with Memcached for session caching due to licensing concerns, using PostgreSQL over MySQL, JWT over session cookies, integer cents for amounts, and cursor-based pagination.",
+  "facts": [
+    {
+      "text": "The project is a fintech application with a database named 'fintech'.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The backend API is built with FastAPI (Python) and exposed on port 8000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "PostgreSQL 16 (Alpine) is used as the primary database.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Redis 7 (Alpine) is used in the Docker Compose setup, configured with maxmemory 256mb and allkeys-lru eviction policy.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Memcached replaces Redis for session caching due to licensing concerns.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Stripe is used for payment processing via webhooks, with STRIPE_SECRET_KEY injected as an environment variable.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Celery workers handle async transaction reconciliation.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The frontend uses React with TanStack Query (@tanstack/react-query) for data fetching and mutations.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT authentication middleware is implemented in Python using HS256 algorithm with a 24-hour token expiry.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "JWT tokens are passed via the Authorization header as Bearer tokens.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Expired JWT tokens return HTTP 401 with error 'Token expired'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table stores amounts as BIGINT (amount_cents) with a CHECK constraint that amount_cents > 0.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction IDs are UUIDs generated with gen_random_uuid().",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transactions have an idempotency_key VARCHAR(64) UNIQUE column to prevent duplicate payment processing.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The transactions table has a composite index on (source_account_id, created_at DESC) and a partial index on status WHERE status != 'settled'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transaction status defaults to 'pending'; currency defaults to 'USD' (VARCHAR(3)).",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Transactions include a metadata JSONB column defaulting to '{}'.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The API uses cursor-based pagination instead of offset/limit, decided for reliability and compliance reasons.",
+      "category": "decision",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Rate limiting is set to 100 requests per minute per user.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Two-factor authentication (2FA) is mandatory for transfers over $10,000.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The compliance team requires audit logs for all financial transactions.",
+      "category": "contextual",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Account balances are stored as integer cents to avoid floating-point rounding errors.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The fraud detection model runs in a sidecar container.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Production runs on AWS ECS Fargate with auto-scaling.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Integration tests use testcontainers for PostgreSQL and Redis.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The useTransactions hook has a staleTime of 30,000ms and refetchOnWindowFocus enabled.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The useTransfer mutation invalidates both 'transactions' and 'balance' query caches on success.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The process_transaction function creates LedgerEntry objects and commits them via db.session.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The Docker Compose API service depends on both 'db' and 'redis' services.",
+      "category": "technical",
+      "confidence": "high",
+      "temporal_class": "long"
+    }
+  ],
+  "ideas": [
+    {
+      "text": "Monitoring should be added for the Stripe service to improve observability of payment processing.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "The FastAPI module should be refactored to improve testability, likely through dependency injection.",
+      "type": "proposal",
+      "temporal_class": "medium"
+    },
+    {
+      "text": "Replacing Redis with Memcached for session caching resolves licensing concerns but may reduce feature availability (e.g., pub/sub, persistence).",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Storing balances as integer cents and using idempotency keys are complementary safeguards against financial data corruption and duplicate charges.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "The partial index on transactions WHERE status != 'settled' optimizes queries that only need to look at active/pending transactions.",
+      "type": "insight",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Running the fraud detection model as a sidecar container allows independent scaling and deployment from the main API.",
+      "type": "insight",
+      "temporal_class": "long"
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FastAPI",
+      "to": "PostgreSQL",
+      "type": "uses",
+      "description": "FastAPI connects to PostgreSQL as the primary database via DATABASE_URL."
+    },
+    {
+      "from": "FastAPI",
+      "to": "Memcached",
+      "type": "uses",
+      "description": "Memcached replaces Redis for session caching in the FastAPI application."
+    },
+    {
+      "from": "FastAPI",
+      "to": "Stripe",
+      "type": "uses",
+      "description": "FastAPI integrates with Stripe for payment processing via webhooks."
+    },
+    {
+      "from": "FastAPI",
+      "to": "JWT AuthMiddleware",
+      "type": "uses",
+      "description": "FastAPI uses JWT AuthMiddleware to authenticate all incoming requests."
+    },
+    {
+      "from": "Celery",
+      "to": "transaction reconciliation",
+      "type": "enables",
+      "description": "Celery workers handle asynchronous transaction reconciliation."
+    },
+    {
+      "from": "React frontend",
+      "to": "TanStack Query",
+      "type": "uses",
+      "description": "The React frontend uses TanStack Query for data fetching and cache management."
+    },
+    {
+      "from": "transactions table",
+      "to": "accounts table",
+      "type": "depends_on",
+      "description": "Transactions reference source and destination account IDs from the accounts table."
+    },
+    {
+      "from": "idempotency_key",
+      "to": "duplicate payment prevention",
+      "type": "enables",
+      "description": "The unique idempotency_key on transactions prevents duplicate payment processing."
+    },
+    {
+      "from": "cursor-based pagination",
+      "to": "offset/limit pagination",
+      "type": "replaces",
+      "description": "Cursor-based pagination replaces offset/limit for reliability and compliance."
+    },
+    {
+      "from": "Memcached",
+      "to": "Redis",
+      "type": "replaces",
+      "description": "Memcached replaces Redis for session caching due to licensing concerns."
+    },
+    {
+      "from": "AWS ECS Fargate",
+      "to": "fintech API",
+      "type": "enables",
+      "description": "Production deployment of the fintech API runs on AWS ECS Fargate with auto-scaling."
+    },
+    {
+      "from": "fraud detection model",
+      "to": "fintech API",
+      "type": "part_of",
+      "description": "The fraud detection model runs as a sidecar container alongside the main API."
+    },
+    {
+      "from": "2FA",
+      "to": "transfers over $10,000",
+      "type": "defined_by",
+      "description": "Two-factor authentication is mandatory specifically for transfers exceeding $10,000."
+    },
+    {
+      "from": "audit logs",
+      "to": "compliance team",
+      "type": "depends_on",
+      "description": "The compliance team requires audit logs for all financial transactions."
+    },
+    {
+      "from": "integer cents storage",
+      "to": "float rounding errors",
+      "type": "contrasts_with",
+      "description": "Storing amounts as integer cents avoids the float rounding errors that would occur with decimal storage."
+    }
+  ],
+  "key_decisions": [
+    {
+      "text": "Use PostgreSQL over MySQL for ACID compliance.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use JWT over session cookies for stateless authentication.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Store monetary amounts as integer cents, not floats.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Use cursor-based pagination for consistency and compliance.",
+      "temporal_class": "long"
+    },
+    {
+      "text": "Replace Redis with Memcached for session caching due to licensing concerns.",
+      "temporal_class": "long"
+    }
+  ],
+  "open_questions": [
+    "What specific Redis licensing concern prompted the switch to Memcached, and has a migration plan been created?",
+    "What monitoring solution will be used for the Stripe service?",
+    "How will the FastAPI module be refactored to improve testability \u2014 dependency injection, service layer abstraction?",
+    "What currencies are supported (beyond the default USD) in SUPPORTED_CURRENCIES?",
+    "What is the audit log storage mechanism \u2014 a separate table, external service, or append-only log?"
+  ],
+  "entities": [
+    "FastAPI",
+    "PostgreSQL",
+    "Redis",
+    "Memcached",
+    "Stripe",
+    "Celery",
+    "TanStack Query",
+    "React",
+    "AWS ECS Fargate",
+    "JWT AuthMiddleware",
+    "Docker Compose",
+    "testcontainers",
+    "LedgerEntry",
+    "AuthMiddleware",
+    "transactions table",
+    "fraud detection model"
+  ]
+}

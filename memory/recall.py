@@ -23,6 +23,7 @@ from .config import (
     PROMPT_QUESTIONS_LIMIT,
     SESSION_TOKEN_BUDGET, PROMPT_TOKEN_BUDGET, CHARS_PER_TOKEN,
     GLOBAL_SCOPE,
+    NARRATIVE_SEARCH_LIMIT,
 )
 from .decay import temporal_weight
 
@@ -201,18 +202,32 @@ def prompt_recall(
         f["_weight"] = temporal_weight(f.get("temporal_class", "short"), f.get("decay_score", 1.0)) * f.get("score", 0.5)
     facts.sort(key=lambda f: f["_weight"], reverse=True)
 
+    # Search narratives for relevant session context
+    try:
+        narratives = db.search_narratives(
+            conn, query_embedding, NARRATIVE_SEARCH_LIMIT, scope=scope,
+        )
+    except Exception:
+        narratives = []  # table may not exist yet (pre-migration-4)
+
     return {
         "facts":         facts,
         "ideas":         ideas,
         "relationships": relationships,
         "questions":     questions,
         "entities_hit":  prompt_entities,
+        "narratives":    narratives,
     }
 
 
 def format_prompt_context(recall: dict) -> str:
     """Render prompt recall as an additionalContext markdown string, respecting token budget."""
-    if not any([recall["facts"], recall["ideas"], recall["relationships"], recall["questions"]]):
+    has_content = any([
+        recall.get("facts"), recall.get("ideas"),
+        recall.get("relationships"), recall.get("questions"),
+        recall.get("narratives"),
+    ])
+    if not has_content:
         return ""
 
     header = "## Recalled Memory (relevant to this prompt)\n"
@@ -220,7 +235,7 @@ def format_prompt_context(recall: dict) -> str:
     budget = PROMPT_TOKEN_BUDGET - _estimate_tokens(header)
 
     # Priority 1: Facts
-    if recall["facts"] and budget > 0:
+    if recall.get("facts") and budget > 0:
         section = ["### Relevant Facts"]
         for f in recall["facts"]:
             tc = f.get("temporal_class", "")
@@ -229,24 +244,32 @@ def format_prompt_context(recall: dict) -> str:
         section.append("")
         budget = _budget_append(lines, section, budget)
 
-    # Priority 2: Ideas
-    if recall["ideas"] and budget > 0:
+    # Priority 2: Related Session Context (narratives)
+    if recall.get("narratives") and budget > 0:
+        section = ["### Related Session Context"]
+        for n in recall["narratives"]:
+            section.append(f"- {n['narrative']}")
+        section.append("")
+        budget = _budget_append(lines, section, budget)
+
+    # Priority 3: Ideas
+    if recall.get("ideas") and budget > 0:
         section = ["### Related Ideas"]
         for i in recall["ideas"]:
             section.append(f"- [{i.get('idea_type','')}] {i['text']}")
         section.append("")
         budget = _budget_append(lines, section, budget)
 
-    # Priority 3: Relationships
-    if recall["relationships"] and budget > 0:
+    # Priority 4: Relationships
+    if recall.get("relationships") and budget > 0:
         section = ["### Related Connections"]
         for r in recall["relationships"]:
             section.append(f"- {r['from_entity']} —[{r['rel_type']}]-> {r['to_entity']}: {r['description']}")
         section.append("")
         budget = _budget_append(lines, section, budget)
 
-    # Priority 4: Open questions
-    if recall["questions"] and budget > 0:
+    # Priority 5: Open questions
+    if recall.get("questions") and budget > 0:
         section = ["### Open Questions to Keep in Mind"]
         for q in recall["questions"]:
             section.append(f"- ? {q['text']}")

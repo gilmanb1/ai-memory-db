@@ -19,6 +19,14 @@ from pathlib import Path
 from .config import DB_PATH
 
 
+NO_LIMIT = 2**31 - 1  # effectively unlimited
+
+
+def _effective_limit(limit: int) -> int:
+    """Convert 0 (meaning 'no limit') to a very large number for SQL LIMIT."""
+    return NO_LIMIT if limit <= 0 else limit
+
+
 def _require_db():
     if not DB_PATH.exists():
         print(f"No database found at {DB_PATH}")
@@ -54,14 +62,15 @@ def cmd_facts(args):
     from . import db
     conn = db.get_connection(read_only=True)
 
+    limit = _effective_limit(args.limit)
     if args.temporal_class:
-        facts = db.get_facts_by_temporal(conn, args.temporal_class, args.limit)
+        facts = db.get_facts_by_temporal(conn, args.temporal_class, limit)
     else:
         facts = []
         for tc in ["long", "medium", "short"]:
-            facts.extend(db.get_facts_by_temporal(conn, tc, args.limit))
+            facts.extend(db.get_facts_by_temporal(conn, tc, limit))
         facts.sort(key=lambda f: f.get("decay_score", 0), reverse=True)
-        facts = facts[:args.limit]
+        facts = facts[:limit]
 
     conn.close()
 
@@ -91,7 +100,7 @@ def cmd_search(args):
 
     from . import db
     conn = db.get_connection(read_only=True)
-    results = db.search_facts(conn, query_emb, limit=args.limit, threshold=0.3)
+    results = db.search_facts(conn, query_emb, limit=_effective_limit(args.limit), threshold=0.3)
     conn.close()
 
     if not results:
@@ -109,7 +118,7 @@ def cmd_entities(args):
     _require_db()
     from . import db
     conn = db.get_connection(read_only=True)
-    entities = db.get_top_entities(conn, args.limit)
+    entities = db.get_top_entities(conn, _effective_limit(args.limit))
     conn.close()
 
     if not entities:
@@ -124,7 +133,7 @@ def cmd_decisions(args):
     _require_db()
     from . import db
     conn = db.get_connection(read_only=True)
-    decisions = db.get_decisions(conn, args.limit)
+    decisions = db.get_decisions(conn, _effective_limit(args.limit))
     conn.close()
 
     if not decisions:
@@ -163,7 +172,7 @@ def cmd_sessions(args):
         FROM sessions
         ORDER BY created_at DESC
         LIMIT ?
-    """, [args.limit]).fetchall()
+    """, [_effective_limit(args.limit)]).fetchall()
     conn.close()
 
     if not rows:
@@ -173,7 +182,7 @@ def cmd_sessions(args):
     for sid, trigger, cwd, msg_count, summary, created in rows:
         print(f"  {str(created)[:19]}  [{trigger}]  {msg_count} msgs  {sid[:12]}...")
         if summary:
-            print(f"    {summary[:120]}")
+            print(f"    {summary}")
         print()
 
 
@@ -234,22 +243,22 @@ def main():
 
     p_facts = sub.add_parser("facts", help="List facts")
     p_facts.add_argument("--class", dest="temporal_class", choices=["short", "medium", "long"])
-    p_facts.add_argument("--limit", type=int, default=25)
+    p_facts.add_argument("--limit", type=int, default=0)
 
     p_search = sub.add_parser("search", help="Semantic search facts")
     p_search.add_argument("query", help="Search query text")
-    p_search.add_argument("--limit", type=int, default=10)
+    p_search.add_argument("--limit", type=int, default=0)
 
     p_entities = sub.add_parser("entities", help="List known entities")
-    p_entities.add_argument("--limit", type=int, default=50)
+    p_entities.add_argument("--limit", type=int, default=0)
 
     p_decisions = sub.add_parser("decisions", help="List decisions")
-    p_decisions.add_argument("--limit", type=int, default=20)
+    p_decisions.add_argument("--limit", type=int, default=0)
 
     sub.add_parser("relationships", help="List relationship graph")
 
     p_sessions = sub.add_parser("sessions", help="List stored sessions")
-    p_sessions.add_argument("--limit", type=int, default=10)
+    p_sessions.add_argument("--limit", type=int, default=0)
 
     p_promote = sub.add_parser("promote", help="Promote an item to global scope")
     p_promote.add_argument("table", help="Table name: facts, ideas, decisions, entities, relationships")

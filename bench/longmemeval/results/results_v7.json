@@ -1,0 +1,632 @@
+{
+  "overall_accuracy": 80.0,
+  "total_correct": 16,
+  "total_questions": 20,
+  "total_invalid": 0,
+  "total_valid": 20,
+  "category_stats": {
+    "knowledge-update": {
+      "correct": 1,
+      "total": 2,
+      "invalid": 0,
+      "valid": 2,
+      "accuracy": 50.0
+    },
+    "multi-session": {
+      "correct": 3,
+      "total": 5,
+      "invalid": 0,
+      "valid": 5,
+      "accuracy": 60.0
+    },
+    "single-session-assistant": {
+      "correct": 4,
+      "total": 5,
+      "invalid": 0,
+      "valid": 5,
+      "accuracy": 80.0
+    },
+    "single-session-user": {
+      "correct": 5,
+      "total": 5,
+      "invalid": 0,
+      "valid": 5,
+      "accuracy": 100.0
+    },
+    "temporal-reasoning": {
+      "correct": 3,
+      "total": 3,
+      "invalid": 0,
+      "valid": 3,
+      "accuracy": 100.0
+    }
+  },
+  "model_config": {
+    "extraction": "see detailed_results",
+    "answer_generation": "see detailed_results",
+    "judge": "see detailed_results",
+    "embeddings": "nomic-embed-text"
+  },
+  "detailed_results": [
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "question": "How long is my daily commute to work?",
+      "correct_answer": "45 minutes each way",
+      "predicted_answer": "Based on the retrieved context, your daily commute to work is **45 minutes each way**, totaling **90 minutes round trip**.\n\nThis was established from a conversation on **2023/05/22 (Mon)**, where you mentioned enjoying audiobooks during your daily commute, and the memory recorded the 45-minute each-way duration.\n\nIt's worth noting that as of **2023/05/27**, there is additional context suggesting you work from home and are also planning to move to Melbourne soon to start a master's program at the University of Melbourne, where you plan to rely on public transport, walking, and cycling for transportation. This may mean your commute situation could be changing in the near future.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly states that the daily commute is 45 minutes each way, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1675.9,
+        "recall_s": 1.88,
+        "answer_s": 6.5,
+        "judge_s": 1.5
+      },
+      "extraction_stats": {
+        "facts": 596,
+        "ideas": 217,
+        "entities": 772,
+        "rels": 368,
+        "decisions": 134,
+        "questions": 195,
+        "sessions": 45,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 45
+    },
+    {
+      "question_id": "51a45a95",
+      "question_type": "single-session-user",
+      "question": "Where did I redeem a $5 coupon on coffee creamer?",
+      "correct_answer": "Target",
+      "predicted_answer": "Based on the retrieved context, you redeemed a **$5 coupon on coffee creamer at Target**. The coupon came from an **email inbox coupon** and was redeemed last Sunday during the week of May 22, 2023.\n\nThis is supported by the context mentioning Target-related savings strategies (such as the Target RedCard providing 5% off and Cartwheel offers), as well as the assistant's response noting that \"many retailers, like **Target**, send exclusive coupons and promotions to their email subscribers,\" directly in the context of discussing your coffee creamer coupon redemption.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies Target as the location where the $5 coupon on coffee creamer was redeemed.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1941.5,
+        "recall_s": 2.72,
+        "answer_s": 4.5,
+        "judge_s": 2.3
+      },
+      "extraction_stats": {
+        "facts": 528,
+        "ideas": 247,
+        "entities": 746,
+        "rels": 416,
+        "decisions": 149,
+        "questions": 217,
+        "sessions": 50,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 50
+    },
+    {
+      "question_id": "89527b6b",
+      "question_type": "single-session-assistant",
+      "question": "I'm going back to our previous conversation about the children's book on dinosaurs. Can you remind me what color was the scaly body of the Plesiosaur in the image?",
+      "correct_answer": "The Plesiosaur had a blue scaly body.",
+      "predicted_answer": "Based on the retrieved context, I can confirm that you did have a previous conversation about a children's book on dinosaurs. The facts confirm that:\n\n- You created a children's book about dinosaurs featuring chapters on **T-Rex, Pterodactyl, Plesiosaur, and Triceratops** with embedded image descriptions.\n- The book included image descriptions in the format **'::title:: == ::description::'**.\n\nHowever, I **do not have the specific details** about the color of the Plesiosaur's scaly body from that conversation. While the source conversation context retrieved does reference the dinosaur book project in the facts, the actual verbatim conversation chunk containing the specific image descriptions (including the Plesiosaur's color) was **not retrieved** in the available context.\n\nI would not want to guess or fabricate a color, as that could give you incorrect information about your own project. I'd recommend checking your original conversation or notes where those image descriptions were written out in the **'::title:: == ::description::'** format to find the exact color detail you're looking for.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response does not contain the correct answer (blue scaly body) and explicitly states it does not have the specific color information about the Plesiosaur.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2067.4,
+        "recall_s": 4.88,
+        "answer_s": 7.3,
+        "judge_s": 2.2
+      },
+      "extraction_stats": {
+        "facts": 636,
+        "ideas": 220,
+        "entities": 706,
+        "rels": 389,
+        "decisions": 146,
+        "questions": 205,
+        "sessions": 45,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 45
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "question": "What degree did I graduate with?",
+      "correct_answer": "Business Administration",
+      "predicted_answer": "Based on the retrieved context, you graduated with a degree in **Business Administration**.\n\nThis is confirmed by the personal fact recorded on **2023/05/30 (Tue) 17:27**, and is also directly supported by the source conversation from that same session, where you stated: *\"I graduated with a degree in Business Administration, which has definitely helped me in my new role.\"*",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 'Business Administration' as the degree, which matches the correct answer exactly.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2105.5,
+        "recall_s": 3.12,
+        "answer_s": 3.8,
+        "judge_s": 2.0
+      },
+      "extraction_stats": {
+        "facts": 632,
+        "ideas": 254,
+        "entities": 725,
+        "rels": 444,
+        "decisions": 164,
+        "questions": 233,
+        "sessions": 52,
+        "cached": 0,
+        "skipped": 1
+      },
+      "num_sessions": 53
+    },
+    {
+      "question_id": "1e043500",
+      "question_type": "single-session-user",
+      "question": "What is the name of the playlist I created on Spotify?",
+      "correct_answer": "Summer Vibes",
+      "predicted_answer": "Based on the retrieved context, the Spotify playlist you created is called **\"Summer Vibes\"**. It contains chill tracks for relaxing and working out, as noted in the memory from **2023/05/21 (Sun)**.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies the playlist name as 'Summer Vibes', which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2148.7,
+        "recall_s": 1.54,
+        "answer_s": 2.8,
+        "judge_s": 2.2
+      },
+      "extraction_stats": {
+        "facts": 615,
+        "ideas": 231,
+        "entities": 790,
+        "rels": 419,
+        "decisions": 139,
+        "questions": 218,
+        "sessions": 50,
+        "cached": 1,
+        "skipped": 0
+      },
+      "num_sessions": 50
+    },
+    {
+      "question_id": "c4f10528",
+      "question_type": "single-session-assistant",
+      "question": "I'm planning to visit Bandung again and I was wondering if you could remind me of the name of that restaurant in Cihampelas Walk that serves a great Nasi Goreng?",
+      "correct_answer": "Miss Bee Providore",
+      "predicted_answer": "Based on the retrieved context from your previous conversation about Bandung (dated 2023/05/30), the restaurant you're thinking of is **Miss Bee Providore**, located in the Cihampelas Walk area.\n\nHere are the details I have about it:\n\n- **Miss Bee Providore** serves a mix of **western and Indonesian cuisine** in a cozy and stylish interior.\n- Their signature dish is **Miss Bee's Nasi Goreng**, which is served with **prawn crackers** and **topped with a fried egg**.\n- They also have a notable dessert \u2014 a **chocolate brownie** served warm with **vanilla ice cream and chocolate sauce**, in case you'd like to round off your meal!\n\nSo when you visit Bandung again, Miss Bee Providore at Cihampelas Walk (Ciwalk) would be the place to head to for that great Nasi Goreng experience you remembered!",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 'Miss Bee Providore' as the restaurant in Cihampelas Walk that serves great Nasi Goreng, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2171.8,
+        "recall_s": 1.88,
+        "answer_s": 5.7,
+        "judge_s": 2.3
+      },
+      "extraction_stats": {
+        "facts": 649,
+        "ideas": 217,
+        "entities": 688,
+        "rels": 377,
+        "decisions": 156,
+        "questions": 202,
+        "sessions": 44,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 44
+    },
+    {
+      "question_id": "58bf7951",
+      "question_type": "single-session-user",
+      "question": "What play did I attend at the local community theater?",
+      "correct_answer": "The Glass Menagerie",
+      "predicted_answer": "Based on the retrieved context, you attended a production of **The Glass Menagerie** at your local community theater.\n\nHere are some additional details from the context surrounding that experience:\n\n- You were **impressed by the lead actress's performance**, who reminded you of your friend **Emily**, an aspiring actress.\n- Around the same time, you had also recently had an **unsuccessful audition for a role in The Crucible**, which motivated you to plan on taking acting classes to improve your skills.\n- You were particularly looking to work on **scene study, character development, and getting into character more authentically**.\n- You also planned to **encourage Emily to audition** for a role at the community theater, inspired by the performance you witnessed.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 'The Glass Menagerie' as the play attended at the local community theater, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2190.7,
+        "recall_s": 1.71,
+        "answer_s": 4.0,
+        "judge_s": 2.1
+      },
+      "extraction_stats": {
+        "facts": 687,
+        "ideas": 251,
+        "entities": 910,
+        "rels": 464,
+        "decisions": 154,
+        "questions": 225,
+        "sessions": 57,
+        "cached": 1,
+        "skipped": 0
+      },
+      "num_sessions": 57
+    },
+    {
+      "question_id": "7161e7e2",
+      "question_type": "single-session-assistant",
+      "question": "I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?",
+      "correct_answer": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+      "predicted_answer": "Based on our previous conversation about the GM social media shift rotation sheet (from the session dated **2023/05/24 (Wed)**), here is Admon's assignment for **Sunday**:\n\n**Admon: 8:00 AM \u2013 4:00 PM** on Sunday.\n\nFor additional context, the full Sunday rotation was:\n1. **Admon** \u2013 8am to 4pm\n2. **Magdy** \u2013 12pm to 8pm\n3. **Ehab** \u2013 4pm to 12am\n4. **Sara** \u2013 12am to 8am\n\nThe rotation covers a 1-week period (Sunday to Saturday), and the GM social media team consists of 7 agents in total: Admon, Magdy, Ehab, Sara, Mostafa, Nemr, and Adam. Each agent has 2 days off per week within the schedule, which runs across four shift times: 8am\u20134pm, 12pm\u20138pm, 4pm\u201312am, and 12am\u20138am.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly states that Admon was assigned the 8:00 AM \u2013 4:00 PM shift on Sundays, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2205.4,
+        "recall_s": 0.95,
+        "answer_s": 6.3,
+        "judge_s": 2.9
+      },
+      "extraction_stats": {
+        "facts": 662,
+        "ideas": 232,
+        "entities": 760,
+        "rels": 406,
+        "decisions": 148,
+        "questions": 209,
+        "sessions": 48,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 48
+    },
+    {
+      "question_id": "e9327a54",
+      "question_type": "single-session-assistant",
+      "question": "I'm planning to revisit Orlando. I was wondering if you could remind me of that unique dessert shop with the giant milkshakes we talked about last time?",
+      "correct_answer": "The Sugar Factory at Icon Park.",
+      "predicted_answer": "Based on the retrieved context from our previous conversation on **2023/05/21 (Sun)**, I can help refresh your memory about the Orlando dessert spots we discussed! However, I want to be transparent with you \u2014 I don't have a specific memory of discussing a shop **specifically known for giant milkshakes** as a standalone unique dessert shop.\n\nWhat I *do* have from our previous conversation is a list of recommended dessert spots in Orlando that we talked about, which included:\n\n1. **The Sugar Factory** \u2014 known for over-the-top, extravagant desserts and drinks (this would be the most likely candidate for giant milkshakes, as The Sugar Factory is famously known for their enormous, elaborate milkshakes!)\n2. **Wondermade**\n3. **Gideon's Bakehouse**\n4. **Kelly's Homemade Ice Cream**\n5. **Voodoo Doughnut**\n6. **The Glass Knife**\n7. **Lickety Splitz**\n8. **Better Than Sex**\n9. **The Greenery Creamery**\n\n**The Sugar Factory** is most likely the place you're thinking of, as it is widely recognized for its **giant, over-the-top milkshakes** loaded with toppings, candy, and elaborate garnishes \u2014 a perfect fit for your family of dessert fanatics!\n\nWe also discussed tips for visiting multiple dessert spots in one night, such as creating an itinerary, sharing desserts, and visiting during non-peak hours. Hope this helps with your Orlando revisit planning! \ud83c\udf66",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response identifies The Sugar Factory as the correct answer, though it doesn't specifically mention Icon Park, the response does correctly identify the key establishment (The Sugar Factory) that matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2308.9,
+        "recall_s": 4.52,
+        "answer_s": 8.4,
+        "judge_s": 2.6
+      },
+      "extraction_stats": {
+        "facts": 642,
+        "ideas": 231,
+        "entities": 713,
+        "rels": 405,
+        "decisions": 142,
+        "questions": 207,
+        "sessions": 50,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 50
+    },
+    {
+      "question_id": "6d550036",
+      "question_type": "multi-session",
+      "question": "How many projects have I led or am currently leading?",
+      "correct_answer": 2,
+      "predicted_answer": "Based on the retrieved context, I can identify the following projects that you have led or are currently leading:\n\n1. **Data Analysis Team \u2013 Marketing Research Class Project** (past): You led a data analysis team in a Marketing Research class where your team performed a comprehensive market analysis for a new product launch. This is explicitly mentioned as a past leadership experience.\n\n2. **Team of Five Engineers \u2013 Senior Software Engineer Role** (current, as of ~2023/05/28): After being promoted to senior software engineer approximately three months before May 2023 (around February 2023), you have been leading a team of five engineers, delivering features ahead of schedule and completing a high-priority project two months ahead of schedule.\n\n3. **Customer Data Analysis Project** (current, as of ~2023/05/21): You are working on a project analyzing customer data to identify trends and patterns (using clustering methods like k-means).\n\n4. **Data Mining Class Solo Project** (current, as of ~2023/05/29): You are working on a solo project for a Data Mining class, analyzing customer purchase data to identify patterns and trends.\n\n---\n\n**Summary:** You have led or are currently leading **at least 4 projects** in total \u2014 1 past academic team leadership project, 1 current professional team leadership role (leading 5 engineers), and 2 current data/analysis projects (one academic solo project and one customer data analysis project).",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response concludes that there are 'at least 4 projects' led or currently being led, which does not match the correct answer of 2.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1903.7,
+        "recall_s": 2.69,
+        "answer_s": 7.3,
+        "judge_s": 2.9
+      },
+      "extraction_stats": {
+        "facts": 586,
+        "ideas": 226,
+        "entities": 700,
+        "rels": 393,
+        "decisions": 129,
+        "questions": 203,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "0a995998",
+      "question_type": "multi-session",
+      "question": "How many items of clothing do I need to pick up or return from a store?",
+      "correct_answer": 3,
+      "predicted_answer": "Based on the retrieved context, I can identify the following clothing items that the user needs to pick up or return from a store:\n\n1. **Navy blue blazer** \u2013 needs to be **picked up from the dry cleaner** (mentioned on 2023/02/15 at 06:30). The user wore it to a meeting a few weeks ago and still hadn't picked it up.\n\n2. **Boots from Zara** \u2013 the user **exchanged boots at Zara on February 5th** because they were too small and ordered a larger size (mentioned on 2023/02/15 at 11:13). This implies the user is waiting to **pick up** the replacement pair from Zara.\n\nThat gives a total of **2 items** of clothing that the user needs to pick up or return from a store:\n- 1 item to pick up from the dry cleaner (navy blue blazer)\n- 1 item to pick up from Zara (replacement boots in larger size)\n\nIt's also worth noting that the user **lent a green sweater to their sister**, but that is not a store pickup/return \u2014 it's a personal lending situation, so it is not counted here.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response concludes there are 2 items, but the correct answer is 3 items, indicating the model missed one clothing item that needs to be picked up or returned from a store.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1949.1,
+        "recall_s": 2.35,
+        "answer_s": 7.5,
+        "judge_s": 2.0
+      },
+      "extraction_stats": {
+        "facts": 576,
+        "ideas": 217,
+        "entities": 595,
+        "rels": 344,
+        "decisions": 136,
+        "questions": 196,
+        "sessions": 44,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 44
+    },
+    {
+      "question_id": "4c36ccef",
+      "question_type": "single-session-assistant",
+      "question": "Can you remind me of the name of the romantic Italian restaurant in Rome you recommended for dinner?",
+      "correct_answer": "Roscioli",
+      "predicted_answer": "## Roscioli \u2014 The Recommended Romantic Restaurant in Rome\n\nThe restaurant recommended to you for a romantic dinner in Rome was **Roscioli**.\n\nHere are the key details from the context:\n\n- **Location:** Near the **Campo dei Fiori market** in Rome\n- **Type:** A gastronomic delicatessen and restaurant\n- **Why it was recommended for romance:** It was specifically highlighted as the best restaurant for a romantic dinner due to its:\n  - **Cozy and intimate atmosphere**\n  - **Soft lighting**\n  - **Excellent service**\n  - **Great wine list**\n- **Focus:** High-quality ingredients, with an emphasis on fine products and dishes\n- **Special option:** There was also a proposal noted that Roscioli offers the option to **request a private wine and cheese tasting** for a unique and romantic dining experience\n\nAdditionally, it was noted as a **Key Decision** that you had decided to pursue Roscioli as your restaurant choice for the romantic dinner in Rome. There is also an open question in the records asking whether you successfully made a reservation at Roscioli for the next evening at **7:00 PM**, so you may want to confirm that reservation if you haven't already.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies Roscioli as the recommended romantic Italian restaurant in Rome.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2081.5,
+        "recall_s": 2.41,
+        "answer_s": 7.7,
+        "judge_s": 2.1
+      },
+      "extraction_stats": {
+        "facts": 572,
+        "ideas": 224,
+        "entities": 805,
+        "rels": 386,
+        "decisions": 146,
+        "questions": 210,
+        "sessions": 49,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 49
+    },
+    {
+      "question_id": "gpt4_59c863d7",
+      "question_type": "multi-session",
+      "question": "How many model kits have I worked on or bought?",
+      "correct_answer": "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro.",
+      "predicted_answer": "Based on the retrieved context, I can identify the following model kits the user has worked on or bought:\n\n1. **Tamiya 1/48 scale Spitfire Mk.V** \u2013 Completed by the user (confirmed as finished).\n2. **Revell F-15 Eagle** \u2013 Picked up in late April 2023 at a hobby store and finished building.\n3. **1/72 scale B-29 bomber** \u2013 Acquired at a model show last weekend (as of 2023/05/20), and confirmed as the user's next project after the F-15.\n4. **1/24 scale '69 Camaro** \u2013 Acquired at a model show last weekend (as of 2023/05/20).\n5. **1/16 scale German Tiger I tank** \u2013 User is actively working on a diorama featuring this tank (as of 2023/05/29).\n\n**Total: 5 model kits** have been worked on or bought by the user.\n\nTo summarize the status of each:\n- **Spitfire Mk.V** \u2013 Completed\n- **Revell F-15 Eagle** \u2013 Completed\n- **B-29 bomber (1/72)** \u2013 Acquired, planned as next project\n- **'69 Camaro (1/24)** \u2013 Acquired at the same model show as the B-29\n- **Tiger I (1/16)** \u2013 Currently in progress (diorama build)",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The response correctly identifies all five model kits with their scales and provides the total count of 5, matching the correct answer completely.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1989.2,
+        "recall_s": 0.83,
+        "answer_s": 7.8,
+        "judge_s": 2.6
+      },
+      "extraction_stats": {
+        "facts": 560,
+        "ideas": 232,
+        "entities": 715,
+        "rels": 402,
+        "decisions": 136,
+        "questions": 205,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "gpt4_59149c77",
+      "question_type": "temporal-reasoning",
+      "question": "How many days passed between my visit to the Museum of Modern Art (MoMA) and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?",
+      "correct_answer": "7 days. 8 days (including the last day) is also acceptable.",
+      "predicted_answer": "## Days Between MoMA Visit and 'Ancient Civilizations' Exhibit at the Met\n\nBased on the retrieved context, I have clear dates for both events:\n\n1. **Museum of Modern Art (MoMA) visit**: January 8, 2023 (Sunday)\n   - The user attended a guided tour focused on 20th-century modern art movements.\n\n2. **'Ancient Civilizations' exhibit at the Metropolitan Museum of Art**: January 15, 2023 (Sunday)\n   - The user attended this exhibit at the Met.\n\n### Calculation:\nFrom **January 8, 2023** to **January 15, 2023**:\n\n**7 days** passed between the two museum visits.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model correctly identifies 7 days between January 8 and January 15, 2023, which matches the gold answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2052.6,
+        "recall_s": 2.7,
+        "answer_s": 4.3,
+        "judge_s": 1.7
+      },
+      "extraction_stats": {
+        "facts": 647,
+        "ideas": 233,
+        "entities": 719,
+        "rels": 430,
+        "decisions": 125,
+        "questions": 214,
+        "sessions": 48,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 48
+    },
+    {
+      "question_id": "e831120c",
+      "question_type": "multi-session",
+      "question": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?",
+      "correct_answer": "3.5 weeks",
+      "predicted_answer": "## Marvel Cinematic Universe + Star Wars Marathon Duration\n\nBased on the retrieved context, here is a breakdown of both marathons:\n\n### MCU Movies\n- **Fact:** User watched all **22 Marvel Cinematic Universe movies** (Iron Man through Spider-Man: Far From Home) in approximately **two weeks (14 days)**.\n\n### Star Wars Films\n- **Fact:** User completed a Star Wars marathon watching all **main films (Episodes I\u2013IX plus Rogue One and Solo)** in approximately **one week and a half (~10 days)**.\n\n---\n\n### Total Combined Time\n\n- MCU: **2 weeks**\n- Star Wars: **1.5 weeks**\n- **Total: approximately 3.5 weeks**\n\nSo in total, it took you roughly **3 and a half weeks** to watch all the Marvel Cinematic Universe movies and the main Star Wars films combined.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly states that the total combined time was approximately 3.5 weeks (3 and a half weeks), which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2106.8,
+        "recall_s": 1.05,
+        "answer_s": 8.6,
+        "judge_s": 3.0
+      },
+      "extraction_stats": {
+        "facts": 584,
+        "ideas": 230,
+        "entities": 834,
+        "rels": 382,
+        "decisions": 140,
+        "questions": 507,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "b5ef892d",
+      "question_type": "multi-session",
+      "question": "How many days did I spend on camping trips in the United States this year?",
+      "correct_answer": "8 days.",
+      "predicted_answer": "## Camping Days in the United States in 2023\n\nBased on the retrieved context, I can identify **two confirmed camping trips** in the United States in 2023:\n\n1. **Big Sur, California** \u2014 A **3-day solo camping trip** completed in early April 2023\n2. **Yellowstone National Park** \u2014 A **5-day camping trip** completed \"last month\" (referenced on 2023/04/29, so approximately March/early April 2023)\n\n### Total: **8 days** of camping in the United States in 2023\n\n**Important notes:**\n- The **7-day family road trip to Utah in February 2023** is explicitly **excluded**, as the user specifically stated they did \"a lot of driving and hiking, but **not camping** for this time.\"\n- The **planned 10-day trek in New Zealand in November 2023** is a future trip and is outside the United States, so it does not count.\n- There may be additional camping trips not captured in the retrieved context, so this count of **8 days** reflects only what is documented in memory.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 8 days as the total number of days spent on camping trips in the United States, breaking it down into a 3-day trip to Big Sur and a 5-day trip to Yellowstone.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2234.0,
+        "recall_s": 0.93,
+        "answer_s": 7.1,
+        "judge_s": 2.1
+      },
+      "extraction_stats": {
+        "facts": 634,
+        "ideas": 253,
+        "entities": 876,
+        "rels": 439,
+        "decisions": 146,
+        "questions": 230,
+        "sessions": 52,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 52
+    },
+    {
+      "question_id": "6a1eabeb",
+      "question_type": "knowledge-update",
+      "question": "What was my personal best time in the charity 5K run?",
+      "correct_answer": "25 minutes and 50 seconds (or 25:50)",
+      "predicted_answer": "## Your Personal Best 5K Time\n\nBased on the retrieved context, there are **two different 5K times** mentioned across different sessions:\n\n1. **27:12** \u2014 This was recorded on **2023/05/23 (Tue)** as a time you \"recently achieved\" in a charity run. This appears to be an earlier result.\n\n2. **25:50** \u2014 This is recorded on **2023/05/30 (Tue)** as your **personal best**, which you explicitly mentioned yourself in conversation:\n> *\"I'm hoping to beat my personal best time of 25:50 this time around.\"*\n\n### Most Up-to-Date Answer:\nYour **personal best 5K time is 25:50**, as confirmed by your own statement on May 30th, 2023 \u2014 which is the most recent and definitive reference. The 27:12 time from May 23rd appears to be an **older or separate charity run result**, while 25:50 represents your all-time personal best that you were actively trying to beat in your upcoming charity 5K training.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The response explicitly states that the personal best 5K time is 25:50, which matches the gold answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1691.2,
+        "recall_s": 0.67,
+        "answer_s": 7.5,
+        "judge_s": 2.0
+      },
+      "extraction_stats": {
+        "facts": 460,
+        "ideas": 205,
+        "entities": 611,
+        "rels": 335,
+        "decisions": 132,
+        "questions": 191,
+        "sessions": 40,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 40
+    },
+    {
+      "question_id": "6aeb4375",
+      "question_type": "knowledge-update",
+      "question": "How many Korean restaurants have I tried in my city?",
+      "correct_answer": "four",
+      "predicted_answer": "Based on the retrieved context, you have tried **3 Korean restaurants** in your city. Here are the details of each:\n\n1. **First Korean restaurant** \u2013 Had an amazing **bibimbap**\n2. **Second Korean restaurant** \u2013 Had a really spicy **kimchi stew (Kimchi Jjigae)**\n3. **Third Korean restaurant** \u2013 Had a unique take on **Japchae with sweet potato noodles**\n\nThis is confirmed by the fact dated **2023/08/11 (Fri)**, which explicitly states: *\"User recently tried three different Korean restaurants, each with unique flavors and styles.\"* Each restaurant offered a distinct dish and flavor profile, reflecting regional variations and unique interpretations of classic Korean cuisine.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The generated answer states 3 Korean restaurants, but the correct answer is four.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1814.1,
+        "recall_s": 2.61,
+        "answer_s": 5.9,
+        "judge_s": 1.6
+      },
+      "extraction_stats": {
+        "facts": 524,
+        "ideas": 231,
+        "entities": 782,
+        "rels": 376,
+        "decisions": 155,
+        "questions": 209,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "gpt4_fa19884c",
+      "question_type": "temporal-reasoning",
+      "question": "How many days passed between the day I started playing along to my favorite songs on my old keyboard and the day I discovered a bluegrass band?",
+      "correct_answer": "6 days. 7 days (including the last day) is also acceptable.",
+      "predicted_answer": "## Days Between Starting Keyboard Playing and Discovering Bluegrass Band\n\nBased on the retrieved context, here are the two key dates:\n\n1. **Started playing keyboard again** (playing along to favorite songs on old keyboard): The relevant fact is dated **2023/03/25 (Sat)** \u2014 \"User started playing keyboard again recently after being inspired by piano-driven music\" and \"User has previous keyboard experience and finds muscle memory intact when playing along to songs.\"\n\n2. **Discovered a bluegrass band**: The relevant fact is dated **2023/03/31 (Fri)** \u2014 from the source conversation: *\"I recently discovered a bluegrass band that features a banjo player and started enjoying their music today.\"* This conversation is from the session dated **2023/03/31 (Fri)**.\n\n### Calculation:\n- From **March 25** to **March 31** = **6 days** passed between the two events.\n\nSo the answer is **6 days** passed between the day you started playing along to your favorite songs on your old keyboard and the day you discovered the bluegrass band.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model correctly calculated 6 days between March 25 and March 31, which matches the gold answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2121.3,
+        "recall_s": 4.25,
+        "answer_s": 7.0,
+        "judge_s": 2.0
+      },
+      "extraction_stats": {
+        "facts": 610,
+        "ideas": 212,
+        "entities": 767,
+        "rels": 387,
+        "decisions": 123,
+        "questions": 188,
+        "sessions": 46,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 46
+    },
+    {
+      "question_id": "b46e15ed",
+      "question_type": "temporal-reasoning",
+      "question": "How many months have passed since I participated in two charity events in a row, on consecutive days?",
+      "correct_answer": 2,
+      "predicted_answer": "## Charity Events on Consecutive Days\n\nTo answer this question, I need to identify two charity events that occurred on **consecutive days**.\n\n### Scanning All Charity Events from Context:\n\n1. **2023/01/30 (Mon)** \u2013 Cancer Research Foundation charity gala at a fancy hotel in downtown\n2. **2023/02/14 (Tue)** \u2013 24-Hour Bike Ride charity event (cycled 4 hours non-stop for a local children's hospital)\n3. **2023/02/15 (Wed)** \u2013 'Ride to Cure Cancer' charity bike ride (40 miles on road bike) AND 'Books for Kids' charity book drive at local library\n4. **2023/03/19 (Sun)** \u2013 'Walk for Hunger' charity event with work colleagues\n\n### Identifying Consecutive Days:\n\nLooking at the dates, **February 14 and February 15, 2023** are consecutive days:\n- **Feb 14**: 24-Hour Bike Ride charity event\n- **Feb 15**: 'Ride to Cure Cancer' / 'Books for Kids' charity book drive\n\nThese are the **two charity events in a row on consecutive days**.\n\n### Calculating Months Passed:\n\n- **Event dates**: February 14\u201315, 2023\n- **Question date**: April 18, 2023\n\nFrom mid-February to mid-April is approximately **2 months** (February 15 \u2192 March 15 = 1 month; March 15 \u2192 April 15 = 2 months; plus 3 more days \u2248 just over **2 months**).",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model correctly identifies the consecutive charity events (Feb 14-15, 2023) and calculates approximately 2 months have passed, matching the gold answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 2237.3,
+        "recall_s": 3.33,
+        "answer_s": 8.6,
+        "judge_s": 1.9
+      },
+      "extraction_stats": {
+        "facts": 541,
+        "ideas": 226,
+        "entities": 644,
+        "rels": 379,
+        "decisions": 143,
+        "questions": 196,
+        "sessions": 46,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 46
+    }
+  ]
+}

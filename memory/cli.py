@@ -9,6 +9,8 @@ Usage:
     python -m memory decisions
     python -m memory relationships
     python -m memory sessions
+    python -m memory observations [--limit N]
+    python -m memory consolidate [--scope SCOPE]
 """
 from __future__ import annotations
 
@@ -55,6 +57,12 @@ def cmd_stats(args):
     print(f"Decisions:      {stats['decisions']['total']}")
     print(f"Open questions: {stats['questions']['total']}  ({stats['questions']['resolved']} resolved)")
     print(f"Sessions:       {stats['sessions']['total']}")
+    obs = stats.get("observations", {})
+    if obs.get("total", 0) or obs.get("inactive", 0):
+        print()
+        print("Observations:")
+        print(f"  Active: {obs.get('total', 0)}  (long: {obs.get('long', 0)}, medium: {obs.get('medium', 0)})")
+        print(f"  Inactive (superseded): {obs.get('inactive', 0)}")
 
 
 def cmd_facts(args):
@@ -232,6 +240,65 @@ def cmd_scopes(args):
         print(f"  {scope_display_name(scope):30s}  {count:>4} items  ({scope})")
 
 
+def cmd_observations(args):
+    _require_db()
+    from . import db
+    conn = db.get_connection(read_only=True)
+
+    limit = _effective_limit(args.limit)
+    observations = []
+    for tc in ["long", "medium"]:
+        observations.extend(db.get_observations_by_temporal(conn, tc, limit))
+    observations.sort(key=lambda o: o.get("proof_count", 0), reverse=True)
+    observations = observations[:limit]
+
+    conn.close()
+
+    if not observations:
+        print("No observations found.")
+        return
+
+    for o in observations:
+        oid = o["id"][:8]
+        tc = o.get("temporal_class", "?")
+        proof = o.get("proof_count", 0)
+        print(f"  [{oid}] [{tc}] {o['text']} (proof: {proof} facts)")
+
+
+def cmd_consolidate(args):
+    import os
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("ANTHROPIC_API_KEY environment variable is required.")
+        sys.exit(1)
+
+    _require_db()
+    from . import db
+    from .scope import resolve_scope
+    from .consolidation import run_consolidation, run_semantic_forgetting
+
+    scope = args.scope or resolve_scope(os.getcwd())
+    conn = db.get_connection()
+
+    print(f"Running consolidation for scope: {scope}")
+    c_stats = run_consolidation(conn, api_key, scope)
+    print(f"  Batches processed: {c_stats['batches']}")
+    print(f"  Observations created: {c_stats['created']}")
+    print(f"  Observations updated: {c_stats['updated']}")
+    print(f"  Observations deleted: {c_stats['deleted']}")
+
+    print()
+    print("Running semantic forgetting...")
+    f_stats = run_semantic_forgetting(conn, scope)
+    print(f"  Pairs checked: {f_stats['pairs_checked']}")
+    print(f"  Superseded: {f_stats['superseded']}")
+
+    conn.close()
+    print()
+    print("Done.")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="memory",
@@ -266,6 +333,12 @@ def main():
 
     sub.add_parser("scopes", help="List all project scopes and item counts")
 
+    p_obs = sub.add_parser("observations", help="List synthesized observations")
+    p_obs.add_argument("--limit", type=int, default=0)
+
+    p_consolidate = sub.add_parser("consolidate", help="Manually trigger consolidation")
+    p_consolidate.add_argument("--scope", type=str, default="", help="Project scope (default: resolve from cwd)")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -281,6 +354,8 @@ def main():
         "sessions": cmd_sessions,
         "promote": cmd_promote,
         "scopes": cmd_scopes,
+        "observations": cmd_observations,
+        "consolidate": cmd_consolidate,
     }
     commands[args.command](args)
 

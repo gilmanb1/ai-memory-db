@@ -34,6 +34,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import memory.config as _cfg
 from memory import db, embeddings, recall
 from memory.decay import compute_decay_score
+from memory.retrieval import parallel_retrieve, reciprocal_rank_fusion, ScoredItem
+from memory.consolidation import run_consolidation, run_semantic_forgetting
 from memory.config import GLOBAL_SCOPE, SESSION_TOKEN_BUDGET, PROMPT_TOKEN_BUDGET, CHARS_PER_TOKEN
 
 # ── Check Ollama ──────────────────────────────────────────────────────────
@@ -587,6 +589,9 @@ def run_benchmark(target_count: int) -> dict:
     results["embed_time_s"] = round(t_embed_total, 3)
     results["insert_time_s"] = round(t_insert_total, 3)
 
+    # ── Build FTS indexes for BM25 retrieval ──────────────────────────────
+    db.rebuild_fts_indexes(conn)
+
     # ── Measure storage size ──────────────────────────────────────────────
     conn.close()
     results["db_size_kb"] = round(db_path.stat().st_size / 1024, 1)
@@ -615,7 +620,7 @@ def run_benchmark(target_count: int) -> dict:
     times = []
     for _ in range(5):
         t0 = time.time()
-        pctx = recall.prompt_recall(conn, query_emb, query_text, scope=SCOPES["fintech"])
+        pctx = recall.prompt_recall(conn, query_emb, query_text, scope=SCOPES["fintech"], db_path=str(db_path))
         times.append(time.time() - t0)
     results["prompt_recall_ms"] = round(min(times) * 1000, 2)
     results["prompt_recall_avg_ms"] = round(sum(times) / len(times) * 1000, 2)
@@ -633,6 +638,74 @@ def run_benchmark(target_count: int) -> dict:
         db.search_facts(conn, query_emb, limit=8, scope=SCOPES["fintech"])
         times.append(time.time() - t0)
     results["search_facts_ms"] = round(min(times) * 1000, 2)
+
+    # ── 4-way parallel retrieval benchmark ─────────────────────────────
+    conn.close()
+    times = []
+    for _ in range(5):
+        t0 = time.time()
+        ret = parallel_retrieve(
+            db_path=str(db_path),
+            query_text=query_text,
+            query_embedding=query_emb,
+            scope=SCOPES["fintech"],
+            limit=10,
+            timeout_ms=2000,
+        )
+        times.append(time.time() - t0)
+    results["parallel_retrieve_ms"] = round(min(times) * 1000, 2)
+    results["parallel_retrieve_avg_ms"] = round(sum(times) / len(times) * 1000, 2)
+    results["parallel_retrieve_items"] = len(ret.items)
+    results["parallel_retrieve_strategies"] = ret.strategy_counts
+    results["parallel_retrieve_exceeded"] = ret.exceeded_budget
+
+    # BM25-only latency
+    times = []
+    for _ in range(5):
+        t0 = time.time()
+        parallel_retrieve(
+            db_path=str(db_path), query_text="Stripe payment processing",
+            query_embedding=None, scope=SCOPES["fintech"], limit=10,
+            timeout_ms=2000, strategies=["bm25"],
+        )
+        times.append(time.time() - t0)
+    results["bm25_only_ms"] = round(min(times) * 1000, 2)
+
+    # ── Consolidation benchmark ────────────────────────────────────────
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        conn_rw2 = db.get_connection(db_path=str(db_path))
+        uncons = db.get_unconsolidated_facts(conn_rw2, limit=100, scope=SCOPES["fintech"])
+        results["unconsolidated_facts"] = len(uncons)
+
+        t0 = time.time()
+        consol_stats = run_consolidation(conn_rw2, api_key, SCOPES["fintech"], quiet=True)
+        results["consolidation_time_s"] = round(time.time() - t0, 2)
+        results["consolidation_stats"] = consol_stats
+
+        # Semantic forgetting
+        t0 = time.time()
+        forget_stats = run_semantic_forgetting(conn_rw2, SCOPES["fintech"])
+        results["semantic_forgetting_time_s"] = round(time.time() - t0, 3)
+        results["semantic_forgetting_stats"] = forget_stats
+
+        # Check observations were created
+        try:
+            obs_stats = db.get_stats(conn_rw2).get("observations", {})
+            results["observations_created"] = obs_stats.get("total", 0)
+        except Exception:
+            results["observations_created"] = 0
+
+        conn_rw2.close()
+    else:
+        results["unconsolidated_facts"] = "SKIPPED (no ANTHROPIC_API_KEY)"
+        results["consolidation_stats"] = "SKIPPED"
+        results["observations_created"] = "SKIPPED"
+
+    # ── Observations in recall ─────────────────────────────────────────
+    conn = db.get_connection(db_path=str(db_path), read_only=True)
+    ctx_with_obs = recall.session_recall(conn, scope=SCOPES["fintech"])
+    results["observations_in_recall"] = len(ctx_with_obs.get("observations", []))
 
     # ── Correctness checks ────────────────────────────────────────────────
     correctness = {}
@@ -721,9 +794,15 @@ def print_results(results: dict) -> None:
     print(f"    Insert time:    {results['insert_time_s']:.3f}s")
 
     print(f"\n  Query Latency:")
-    print(f"    session_recall: {results['session_recall_ms']:.2f}ms (best), {results['session_recall_avg_ms']:.2f}ms (avg)")
-    print(f"    prompt_recall:  {results['prompt_recall_ms']:.2f}ms (best), {results['prompt_recall_avg_ms']:.2f}ms (avg)")
-    print(f"    search_facts:   {results['search_facts_ms']:.2f}ms (best)")
+    print(f"    session_recall:     {results['session_recall_ms']:.2f}ms (best), {results['session_recall_avg_ms']:.2f}ms (avg)")
+    print(f"    prompt_recall:      {results['prompt_recall_ms']:.2f}ms (best), {results['prompt_recall_avg_ms']:.2f}ms (avg)")
+    print(f"    search_facts:       {results['search_facts_ms']:.2f}ms (best)")
+    print(f"    parallel_retrieve:  {results['parallel_retrieve_ms']:.2f}ms (best), {results['parallel_retrieve_avg_ms']:.2f}ms (avg)")
+    print(f"    bm25_only:          {results['bm25_only_ms']:.2f}ms (best)")
+    print(f"    strategies:         {results['parallel_retrieve_strategies']}")
+    print(f"    items returned:     {results['parallel_retrieve_items']}")
+    exceeded = "YES" if results['parallel_retrieve_exceeded'] else "no"
+    print(f"    budget exceeded:    {exceeded}")
 
     print(f"\n  Token Budget:")
     session_ok = "PASS" if results["session_budget_ok"] else "FAIL"
@@ -735,6 +814,17 @@ def print_results(results: dict) -> None:
     for check, passed in results["correctness"].items():
         status = "PASS" if passed else "FAIL"
         print(f"    {check:30s} [{status}]")
+
+    print(f"\n  Consolidation:")
+    print(f"    unconsolidated:     {results.get('unconsolidated_facts', 'N/A')}")
+    print(f"    consolidation:      {results.get('consolidation_stats', 'N/A')}")
+    if isinstance(results.get('consolidation_time_s'), (int, float)):
+        print(f"    consolidation time: {results['consolidation_time_s']:.2f}s")
+    print(f"    observations:       {results.get('observations_created', 'N/A')}")
+    print(f"    in recall:          {results.get('observations_in_recall', 0)}")
+    if isinstance(results.get('semantic_forgetting_stats'), dict):
+        sf = results['semantic_forgetting_stats']
+        print(f"    semantic forget:    {sf.get('superseded', 0)} superseded / {sf.get('pairs_checked', 0)} pairs checked")
 
     print(f"\n  DB Stats:")
     for k, v in results["db_stats"].items():

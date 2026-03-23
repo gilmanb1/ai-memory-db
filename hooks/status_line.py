@@ -4,6 +4,7 @@
 # dependencies = [
 #   "duckdb>=1.1.0",
 #   "anthropic>=0.50.0",
+#   "numpy>=1.24.0",
 # ]
 # ///
 """
@@ -87,12 +88,49 @@ def main() -> None:
                     except Exception:
                         pass
 
+    # ── Speculative pre-fetch recall ───────────────────────────────────────
+    # Pre-compute recall context so user_prompt_submit can use it instantly
+    if session_id and cwd:
+        try:
+            from memory.extraction_state import load_prefetch, save_prefetch
+            from memory.config import DB_PATH
+
+            # Only pre-fetch if DB exists and we haven't recently
+            if DB_PATH.exists():
+                cached = load_prefetch(session_id, max_age_s=30.0)
+                if not cached:
+                    from memory import db, recall, embeddings
+                    from memory.scope import resolve_scope
+
+                    # Use recent conversation context as the prefetch query
+                    recent_summary = data.get("conversation_summary", "")
+                    if recent_summary and len(recent_summary) > 20:
+                        query_emb = embeddings.embed(recent_summary)
+                        if query_emb:
+                            conn = db.get_connection(read_only=True)
+                            try:
+                                scope = resolve_scope(cwd)
+                                ctx = recall.prompt_recall(conn, query_emb, recent_summary, scope=scope)
+                                formatted = recall.format_prompt_context(ctx)
+                                if formatted:
+                                    save_prefetch(session_id, formatted, query_emb)
+                            finally:
+                                conn.close()
+        except Exception:
+            pass  # Pre-fetch is best-effort, never crash
+
     print(status)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        # Status line must never crash
+    except Exception as e:
+        # Status line must never crash — log the error for debugging
+        import traceback
+        try:
+            with open(str(Path.home() / ".claude" / "memory" / "status_error.log"), "a") as f:
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
         print("mem: err")

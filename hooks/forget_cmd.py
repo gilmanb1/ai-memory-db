@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from memory import db
+from memory.routing import classify_memory, find_auto_memory_file, delete_auto_memory
 
 
 def main() -> None:
@@ -45,6 +46,8 @@ def main() -> None:
             item = results[0]
             if db.soft_delete(conn, forget_id, forget_table):
                 print(f"Forgot: {item['text']}")
+                # Also clean up auto-memory if this item was routed there
+                _cleanup_auto_memory(item["text"])
             else:
                 print("Failed to forget item.")
         finally:
@@ -90,6 +93,26 @@ def main() -> None:
         print(json.dumps(results))
     finally:
         conn.close()
+
+
+def _resolve_auto_memory_dir(cwd: str) -> Path:
+    """Derive the auto-memory directory from the cwd."""
+    slug = cwd.replace("/", "-")
+    return Path.home() / ".claude" / "projects" / slug / "memory"
+
+
+def _cleanup_auto_memory(text: str) -> None:
+    """Try to remove the auto-memory file corresponding to this text."""
+    try:
+        cwd = os.getcwd()
+        memory_dir = _resolve_auto_memory_dir(cwd)
+        if not memory_dir.exists():
+            return
+        filename = find_auto_memory_file(text, memory_dir)
+        if filename:
+            delete_auto_memory(filename, memory_dir)
+    except Exception:
+        pass  # Best-effort cleanup
 
 
 if __name__ == "__main__":

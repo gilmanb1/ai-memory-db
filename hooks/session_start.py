@@ -3,6 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "duckdb>=1.1.0",
+#   "numpy>=1.24.0",
 # ]
 # ///
 """
@@ -25,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path.home() / ".claude"))
 
 from memory import db, recall
+from memory.db import ensure_fts
 from memory.scope import resolve_scope
 
 
@@ -50,6 +52,13 @@ def main(payload: dict) -> None:
     conn = None
     try:
         conn = db.get_connection(read_only=True)
+
+        # Pre-warm FTS extension so first prompt recall doesn't pay load cost
+        try:
+            ensure_fts(conn)
+        except Exception:
+            pass  # Non-critical — FTS will be loaded on first use
+
         stats = db.get_stats(conn)
 
         # Nothing stored yet → skip injection
@@ -91,12 +100,18 @@ def main(payload: dict) -> None:
 
     # Terminal hint
     fact_counts = stats["facts"]
-    print(
-        f"[memory] Injected {fact_counts['long']} long + {fact_counts['medium']} medium facts"
-        f" | {stats['decisions']['total']} decisions"
-        f" | {stats['entities']['total']} entities",
-        file=sys.stderr,
-    )
+    parts = [
+        f"[memory] Injected {fact_counts['long']} long + {fact_counts['medium']} medium facts",
+        f"{stats['decisions']['total']} decisions",
+        f"{stats['entities']['total']} entities",
+    ]
+    guardrail_count = stats.get("guardrails", {}).get("total", 0)
+    procedure_count = stats.get("procedures", {}).get("total", 0)
+    if guardrail_count:
+        parts.append(f"{guardrail_count} guardrails")
+    if procedure_count:
+        parts.append(f"{procedure_count} procedures")
+    print(" | ".join(parts), file=sys.stderr)
 
 
 if __name__ == "__main__":

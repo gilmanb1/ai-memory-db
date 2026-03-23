@@ -37,15 +37,20 @@ EXTRACTION_TOOL = {
             },
             "facts": {
                 "type": "array",
-                "description": "5-25 concrete, specific facts stated or established.",
+                "description": "5-25 concrete, specific facts. Preserve specific names, places, numbers, and dates. For coding conversations, capture file paths, function names, patterns, and rationale.",
                 "items": {
                     "type": "object",
                     "required": ["text", "category", "confidence", "temporal_class"],
                     "properties": {
-                        "text": {"type": "string", "description": "A concrete, specific fact."},
+                        "text": {"type": "string", "description": "A concrete, specific fact. Include specific names, file paths, function names, amounts, and dates when mentioned."},
                         "category": {
                             "type": "string",
-                            "enum": ["technical", "decision", "personal", "contextual", "numerical"],
+                            "enum": [
+                                "architecture", "implementation", "operational",
+                                "dependency", "decision_rationale", "constraint",
+                                "bug_pattern", "user_preference", "project_context",
+                                "technical", "decision", "personal", "contextual", "numerical",
+                            ],
                         },
                         "confidence": {
                             "type": "string",
@@ -54,6 +59,23 @@ EXTRACTION_TOOL = {
                         "temporal_class": {
                             "type": "string",
                             "enum": ["short", "medium", "long"],
+                        },
+                        "importance": {
+                            "type": "integer",
+                            "description": "1-10 importance score. 1=trivial, 5=normal, 8+=critical knowledge that prevents errors if remembered.",
+                            "minimum": 1,
+                            "maximum": 10,
+                        },
+                        "file_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "File paths associated with this fact (e.g., 'memory/db.py', 'src/auth.py'). Include when the fact is about specific files.",
+                        },
+                        "failure_probability": {
+                            "type": "number",
+                            "description": "0.0-1.0: How likely would an AI agent get this wrong without being told? 0.0=obvious from code, 0.5=moderate risk, 0.8+=almost certain to cause errors. Non-obvious constraints, counterintuitive patterns, and 'ugly but correct' code should score 0.7+.",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
                         },
                     },
                 },
@@ -100,15 +122,80 @@ EXTRACTION_TOOL = {
             },
             "key_decisions": {
                 "type": "array",
-                "description": "0-10 decisions made or committed to.",
+                "description": "0-10 decisions made or committed to. Include the rationale (WHY), not just the decision.",
                 "items": {
                     "type": "object",
                     "required": ["text", "temporal_class"],
                     "properties": {
-                        "text": {"type": "string"},
+                        "text": {"type": "string", "description": "The decision AND its rationale. e.g., 'Use urllib3 instead of requests because requests bundles certifi which conflicts with corporate CA'"},
                         "temporal_class": {
                             "type": "string",
                             "enum": ["short", "medium", "long"],
+                        },
+                        "importance": {
+                            "type": "integer",
+                            "description": "1-10 importance. Decisions with non-obvious rationale or that prevent common mistakes should be 8+.",
+                            "minimum": 1,
+                            "maximum": 10,
+                        },
+                        "file_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files this decision applies to.",
+                        },
+                    },
+                },
+            },
+            "guardrails": {
+                "type": "array",
+                "description": "0-5 'don't touch this' warnings. Extract when code is described as intentionally unusual, when a library was chosen for non-obvious operational reasons, or when past changes caused problems.",
+                "items": {
+                    "type": "object",
+                    "required": ["warning", "rationale"],
+                    "properties": {
+                        "warning": {"type": "string", "description": "What NOT to do. e.g., 'Do not refactor the polling loop to exponential backoff'"},
+                        "rationale": {"type": "string", "description": "WHY this constraint exists. e.g., 'Downstream API detects backoff patterns and penalizes exponential clients'"},
+                        "consequence": {"type": "string", "description": "What breaks if violated. e.g., 'Client gets blocked for 24h'"},
+                        "file_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files this guardrail applies to.",
+                        },
+                        "line_range": {"type": "string", "description": "Optional line range, e.g., 'L45-L78'"},
+                    },
+                },
+            },
+            "procedures": {
+                "type": "array",
+                "description": "0-5 'how to do X' procedures. Extract when step-by-step processes are described for common development tasks.",
+                "items": {
+                    "type": "object",
+                    "required": ["task_description", "steps"],
+                    "properties": {
+                        "task_description": {"type": "string", "description": "What task this procedure covers. e.g., 'Add a new database migration'"},
+                        "steps": {"type": "string", "description": "Step-by-step instructions. e.g., '1. Add entry to MIGRATIONS list 2. Increment version number 3. Run test_memory.py'"},
+                        "file_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files involved in this procedure.",
+                        },
+                    },
+                },
+            },
+            "error_solutions": {
+                "type": "array",
+                "description": "0-5 error→solution pairs. Extract when bugs are discussed and solutions found.",
+                "items": {
+                    "type": "object",
+                    "required": ["error_pattern", "solution"],
+                    "properties": {
+                        "error_pattern": {"type": "string", "description": "The error message or pattern. e.g., 'ImportError: No module named onnxruntime'"},
+                        "error_context": {"type": "string", "description": "When this error occurs. e.g., 'On macOS ARM when running extraction'"},
+                        "solution": {"type": "string", "description": "How to fix it. e.g., 'pip install onnxruntime-silicon'"},
+                        "file_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files where this error occurs.",
                         },
                     },
                 },
@@ -120,7 +207,7 @@ EXTRACTION_TOOL = {
             },
             "entities": {
                 "type": "array",
-                "description": "4-20 named things: person, project, tool, technology, organisation.",
+                "description": "4-20 named things: person, project, tool, technology, organisation, file, module, function.",
                 "items": {"type": "string"},
             },
         },
@@ -130,12 +217,13 @@ EXTRACTION_TOOL = {
 # ── Extraction system prompt ──────────────────────────────────────────────
 
 SYSTEM_PROMPT = textwrap.dedent("""\
-    You are a knowledge-extraction engine for a persistent long-term memory system.
+    You are a knowledge-extraction engine for a persistent long-term memory system
+    optimised for software engineering and coding conversations.
     Your output is stored in a vector database and must be precise and durable.
 
     Given a conversation transcript, use the store_knowledge tool to extract
-    all notable facts, ideas, relationships, decisions, open questions, and
-    named entities.
+    all notable facts, ideas, relationships, decisions, open questions, named
+    entities, guardrails, procedures, and error→solution pairs.
 
     TEMPORAL CLASS RULES (critical — you set the initial class):
 
@@ -153,6 +241,34 @@ SYSTEM_PROMPT = textwrap.dedent("""\
              core tech stack (language, DB, framework), an established constraint,
              a completed architectural decision that won't be revisited,
              a user preference stated as a lasting rule.
+
+    IMPORTANCE SCORING (1-10, assign to facts and decisions):
+    1-3  — Trivial or easily re-derivable from code.
+    4-6  — Useful working context, nice to recall.
+    7-8  — Important knowledge that significantly helps the agent.
+    9-10 — Critical. Forgetting this would cause errors, broken code, or wasted effort.
+           Examples: "don't refactor X because Y", library chosen for production constraint,
+           a past incident that informed a design decision.
+
+    FAILURE PROBABILITY (0.0-1.0, assign to facts):
+    0.0-0.2 — Obvious from reading the code. Agent would get this right on its own.
+    0.3-0.5 — Moderate risk. Useful context but not catastrophic if missed.
+    0.6-0.8 — High risk. Agent would likely make a wrong assumption without this.
+    0.9-1.0 — Near-certain failure. Counterintuitive patterns, "ugly but correct" code,
+              non-obvious library constraints, past incidents that shaped decisions.
+
+    CODE-SPECIFIC EXTRACTION RULES:
+    - ALWAYS capture file paths associated with facts (e.g., "in memory/db.py")
+    - Extract specific function/class names as entities
+    - When code is described as intentionally unusual or "ugly but correct",
+      extract as a GUARDRAIL with warning + rationale + consequence
+    - When step-by-step processes are described, extract as PROCEDURES
+    - When errors are discussed and solved, extract as ERROR_SOLUTIONS
+    - Capture architectural rationale ("we chose X because Y") as high-importance decisions
+    - Extract test patterns and strategies
+    - Prefer the specific code-oriented categories (architecture, implementation,
+      operational, dependency, decision_rationale, constraint, bug_pattern)
+      over generic ones (technical, contextual)
 
     Be aggressive about classifying as LONG what is truly durable.
     Be aggressive about classifying as SHORT what is one-session trivia.
@@ -231,7 +347,7 @@ def build_conversation_text(messages: list[dict], max_chars: int = MAX_TRANSCRIP
 
 # ── Claude API call ───────────────────────────────────────────────────────
 
-def extract_knowledge(conversation_text: str, api_key: str) -> dict:
+def extract_knowledge(conversation_text: str, api_key: str, model: Optional[str] = None) -> dict:
     """
     Call Claude to extract structured knowledge from the conversation.
     Uses tool_use for guaranteed structured output.
@@ -239,7 +355,7 @@ def extract_knowledge(conversation_text: str, api_key: str) -> dict:
     """
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
-        model=CLAUDE_MODEL,
+        model=model or CLAUDE_MODEL,
         max_tokens=EXTRACT_MAX_TOKENS,
         system=SYSTEM_PROMPT,
         messages=[{
@@ -352,6 +468,9 @@ INCREMENTAL_EXTRACTION_TOOL = {
             "ideas": EXTRACTION_TOOL["input_schema"]["properties"]["ideas"],
             "relationships": EXTRACTION_TOOL["input_schema"]["properties"]["relationships"],
             "key_decisions": EXTRACTION_TOOL["input_schema"]["properties"]["key_decisions"],
+            "guardrails": EXTRACTION_TOOL["input_schema"]["properties"]["guardrails"],
+            "procedures": EXTRACTION_TOOL["input_schema"]["properties"]["procedures"],
+            "error_solutions": EXTRACTION_TOOL["input_schema"]["properties"]["error_solutions"],
             "open_questions": EXTRACTION_TOOL["input_schema"]["properties"]["open_questions"],
             "entities": EXTRACTION_TOOL["input_schema"]["properties"]["entities"],
             # New: superseding

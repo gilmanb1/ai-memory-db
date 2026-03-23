@@ -4,6 +4,7 @@
 # dependencies = [
 #   "duckdb>=1.1.0",
 #   "anthropic>=0.50.0",
+#   "numpy>=1.24.0",
 # ]
 # ///
 """

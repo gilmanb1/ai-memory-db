@@ -137,7 +137,21 @@ def run_extraction(
         scope=scope,
     )
 
-    counters = {"facts": 0, "ideas": 0, "entities": 0, "rels": 0, "decisions": 0, "questions": 0}
+    counters = {"facts": 0, "ideas": 0, "entities": 0, "rels": 0, "decisions": 0, "questions": 0, "chunks": 0, "guardrails": 0, "procedures": 0, "error_solutions": 0}
+
+    # Store conversation as small overlapping chunks for precise retrieval
+    from .config import CHUNKS_ENABLED
+    chunk_ids_list = []
+    if CHUNKS_ENABLED:
+        from .chunking import split_into_chunks
+        windows = split_into_chunks(conversation_text)
+        for window_text in windows:
+            chunk_emb = embeddings.embed(window_text)
+            cid = db.insert_chunk(conn, window_text, session_id, scope, embedding=chunk_emb)
+            chunk_ids_list.append(cid)
+        counters["chunks"] += len(chunk_ids_list)
+    # Use first chunk_id for fact linking (facts link to their session's first chunk)
+    chunk_id = chunk_ids_list[0] if chunk_ids_list else None
 
     # Entities first
     for entity_name in knowledge.get("entities", []):
@@ -151,6 +165,7 @@ def run_extraction(
         if not text:
             continue
         emb = embeddings.embed(text)
+        fact_file_paths = fact.get("file_paths", []) if isinstance(fact, dict) else []
         fid, is_new = db.upsert_fact(
             conn,
             text=text,
@@ -161,6 +176,10 @@ def run_extraction(
             session_id=session_id,
             decay_fn=compute_decay_score,
             scope=scope,
+            source_chunk_id=chunk_id,
+            importance=fact.get("importance", 5) if isinstance(fact, dict) else 5,
+            file_paths=fact_file_paths,
+            failure_probability=fact.get("failure_probability", 0.0) if isinstance(fact, dict) else 0.0,
         )
         if is_new:
             counters["facts"] += 1
@@ -234,11 +253,88 @@ def run_extraction(
         if is_new:
             counters["questions"] += 1
 
+    # Guardrails
+    for guard in knowledge.get("guardrails", []):
+        warning = guard.get("warning", "").strip()
+        if not warning:
+            continue
+        emb = embeddings.embed(warning)
+        _, is_new = db.upsert_guardrail(
+            conn, warning=warning,
+            rationale=guard.get("rationale", ""),
+            consequence=guard.get("consequence", ""),
+            file_paths=guard.get("file_paths", []),
+            line_range=guard.get("line_range", ""),
+            embedding=emb, session_id=session_id, scope=scope,
+        )
+        if is_new:
+            counters["guardrails"] += 1
+
+    # Procedures
+    for proc in knowledge.get("procedures", []):
+        task_desc = proc.get("task_description", "").strip()
+        steps = proc.get("steps", "").strip()
+        if not task_desc or not steps:
+            continue
+        emb = embeddings.embed(task_desc)
+        _, is_new = db.upsert_procedure(
+            conn, task_description=task_desc, steps=steps,
+            file_paths=proc.get("file_paths", []),
+            embedding=emb, session_id=session_id, scope=scope,
+        )
+        if is_new:
+            counters["procedures"] += 1
+
+    # Error→Solution pairs
+    for err in knowledge.get("error_solutions", []):
+        error_pattern = err.get("error_pattern", "").strip()
+        solution = err.get("solution", "").strip()
+        if not error_pattern or not solution:
+            continue
+        emb = embeddings.embed(error_pattern)
+        _, is_new = db.upsert_error_solution(
+            conn, error_pattern=error_pattern, solution=solution,
+            error_context=err.get("error_context", ""),
+            file_paths=err.get("file_paths", []),
+            embedding=emb, session_id=session_id, scope=scope,
+        )
+        if is_new:
+            counters["error_solutions"] += 1
+
+    # ── Consolidation (synthesize observations from facts) ────────────────
+    consolidation_stats = {"batches": 0, "created": 0, "updated": 0, "deleted": 0}
+    from .config import CONSOLIDATION_ENABLED
+    if CONSOLIDATION_ENABLED and api_key:
+        try:
+            from .consolidation import run_consolidation, run_semantic_forgetting, run_coherence_check
+            consolidation_stats = run_consolidation(conn, api_key, scope, quiet=quiet)
+            if consolidation_stats.get("created", 0) > 0 or consolidation_stats.get("deleted", 0) > 0:
+                run_semantic_forgetting(conn, scope)
+            # Coherence validation
+            coherence_stats = run_coherence_check(conn, scope, quiet=quiet)
+            if coherence_stats.get("resolved", 0) > 0 and not quiet:
+                _err(f"[memory] Coherence: resolved {coherence_stats['resolved']} contradictions")
+        except Exception as exc:
+            print(f"[memory] Consolidation failed: {exc}", file=sys.stderr)
+
+    # ── Community summaries ────────────────────────────────────────────────
+    if CONSOLIDATION_ENABLED and api_key:
+        try:
+            from .communities import build_community_summaries
+            community_stats = build_community_summaries(conn, api_key, scope, quiet=quiet)
+            if community_stats.get("summaries_created", 0) > 0 and not quiet:
+                _err(f"[memory] Communities: {community_stats['summaries_created']} summaries created")
+        except Exception as exc:
+            print(f"[memory] Community summaries failed: {exc}", file=sys.stderr)
+
     # ── Decay pass ────────────────────────────────────────────────────────
     decay_stats = db.apply_decay_pass(conn)
 
     # ── Purge old soft-deleted items (>30 days) ──────────────────────────
     purge_stats = db.purge_deleted(conn)
+
+    # ── Rebuild FTS indexes ───────────────────────────────────────────────
+    db.rebuild_fts_indexes(conn)
 
     stats = db.get_stats(conn)
     conn.close()
@@ -286,7 +382,7 @@ def _store_structured_items(
 
     Returns (counters_dict, new_item_ids_dict).
     """
-    counters = {"facts": 0, "ideas": 0, "entities": 0, "rels": 0, "decisions": 0, "questions": 0}
+    counters = {"facts": 0, "ideas": 0, "entities": 0, "rels": 0, "decisions": 0, "questions": 0, "guardrails": 0, "procedures": 0, "error_solutions": 0}
     new_ids: dict[str, list[str]] = {"facts": [], "ideas": [], "decisions": []}
 
     def _should_skip(emb):
@@ -315,6 +411,7 @@ def _store_structured_items(
         emb = embeddings.embed(text)
         if _should_skip(emb):
             continue
+        fact_file_paths = fact.get("file_paths", []) if isinstance(fact, dict) else []
         fid, is_new = db.upsert_fact(
             conn, text=text,
             category=fact.get("category", "contextual"),
@@ -322,6 +419,9 @@ def _store_structured_items(
             confidence=fact.get("confidence", "medium"),
             embedding=emb, session_id=session_id,
             decay_fn=compute_decay_score, scope=scope,
+            importance=fact.get("importance", 5) if isinstance(fact, dict) else 5,
+            file_paths=fact_file_paths,
+            failure_probability=fact.get("failure_probability", 0.0) if isinstance(fact, dict) else 0.0,
         )
         if is_new:
             counters["facts"] += 1
@@ -391,6 +491,60 @@ def _store_structured_items(
         _, is_new = db.upsert_question(conn, q_text, emb, session_id, scope=scope)
         if is_new:
             counters["questions"] += 1
+
+    # Guardrails
+    for guard in knowledge.get("guardrails", []):
+        warning = guard.get("warning", "").strip()
+        if not warning:
+            continue
+        emb = embeddings.embed(warning)
+        if _should_skip(emb):
+            continue
+        _, is_new = db.upsert_guardrail(
+            conn, warning=warning,
+            rationale=guard.get("rationale", ""),
+            consequence=guard.get("consequence", ""),
+            file_paths=guard.get("file_paths", []),
+            line_range=guard.get("line_range", ""),
+            embedding=emb, session_id=session_id, scope=scope,
+        )
+        if is_new:
+            counters["guardrails"] += 1
+
+    # Procedures
+    for proc in knowledge.get("procedures", []):
+        task_desc = proc.get("task_description", "").strip()
+        steps = proc.get("steps", "").strip()
+        if not task_desc or not steps:
+            continue
+        emb = embeddings.embed(task_desc)
+        if _should_skip(emb):
+            continue
+        _, is_new = db.upsert_procedure(
+            conn, task_description=task_desc, steps=steps,
+            file_paths=proc.get("file_paths", []),
+            embedding=emb, session_id=session_id, scope=scope,
+        )
+        if is_new:
+            counters["procedures"] += 1
+
+    # Error→Solution pairs
+    for err in knowledge.get("error_solutions", []):
+        error_pattern = err.get("error_pattern", "").strip()
+        solution = err.get("solution", "").strip()
+        if not error_pattern or not solution:
+            continue
+        emb = embeddings.embed(error_pattern)
+        if _should_skip(emb):
+            continue
+        _, is_new = db.upsert_error_solution(
+            conn, error_pattern=error_pattern, solution=solution,
+            error_context=err.get("error_context", ""),
+            file_paths=err.get("file_paths", []),
+            embedding=emb, session_id=session_id, scope=scope,
+        )
+        if is_new:
+            counters["error_solutions"] += 1
 
     return counters, new_ids
 
@@ -610,8 +764,25 @@ def run_incremental_extraction(
     # ── Finalize if this is the last pass ────────────────────────────────
     if is_final:
         db.finalize_narratives(conn, session_id)
+        # Consolidation
+        from .config import CONSOLIDATION_ENABLED
+        if CONSOLIDATION_ENABLED and api_key:
+            try:
+                from .consolidation import run_consolidation, run_semantic_forgetting, run_coherence_check
+                c_stats = run_consolidation(conn, api_key, scope, quiet=quiet)
+                if c_stats.get("created", 0) > 0 or c_stats.get("deleted", 0) > 0:
+                    run_semantic_forgetting(conn, scope)
+                run_coherence_check(conn, scope, quiet=quiet)
+            except Exception as exc:
+                print(f"[memory] Consolidation failed: {exc}", file=sys.stderr)
+            try:
+                from .communities import build_community_summaries
+                build_community_summaries(conn, api_key, scope, quiet=quiet)
+            except Exception as exc:
+                print(f"[memory] Community summaries failed: {exc}", file=sys.stderr)
         decay_stats = db.apply_decay_pass(conn)
         db.purge_deleted(conn)
+        db.rebuild_fts_indexes(conn)
         conn.close()
         extraction_state.mark_extraction_complete(session_id)
         extraction_state.delete_state(session_id)

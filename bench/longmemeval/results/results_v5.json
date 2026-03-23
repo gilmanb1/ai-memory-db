@@ -1,0 +1,617 @@
+{
+  "overall_accuracy": 57.9,
+  "total_correct": 11,
+  "total_questions": 20,
+  "total_invalid": 1,
+  "total_valid": 19,
+  "category_stats": {
+    "knowledge-update": {
+      "correct": 0,
+      "total": 2,
+      "invalid": 0,
+      "valid": 2,
+      "accuracy": 0.0
+    },
+    "multi-session": {
+      "correct": 3,
+      "total": 5,
+      "invalid": 1,
+      "valid": 4,
+      "accuracy": 75.0
+    },
+    "single-session-assistant": {
+      "correct": 3,
+      "total": 5,
+      "invalid": 0,
+      "valid": 5,
+      "accuracy": 60.0
+    },
+    "single-session-user": {
+      "correct": 4,
+      "total": 5,
+      "invalid": 0,
+      "valid": 5,
+      "accuracy": 80.0
+    },
+    "temporal-reasoning": {
+      "correct": 1,
+      "total": 3,
+      "invalid": 0,
+      "valid": 3,
+      "accuracy": 33.3
+    }
+  },
+  "model_config": {
+    "extraction": "see detailed_results",
+    "answer_generation": "see detailed_results",
+    "judge": "see detailed_results",
+    "embeddings": "nomic-embed-text"
+  },
+  "detailed_results": [
+    {
+      "question_id": "51a45a95",
+      "question_type": "single-session-user",
+      "question": "Where did I redeem a $5 coupon on coffee creamer?",
+      "correct_answer": "Target",
+      "predicted_answer": "Based on the retrieved context, the fact states:\n\n> *\"User redeemed a $5 coupon on coffee creamer discovered in email inbox last Sunday\"* [2023/05/29 (Mon) 11:14]\n\nUnfortunately, the retrieved context **does not specify the exact store or location** where you redeemed the $5 coupon on coffee creamer. The memory only notes that the coupon was originally **discovered in your email inbox** the Sunday prior (around May 28, 2023), but the redemption location is not mentioned in any of the available facts or source conversation chunks.\n\nWhat is known is that you organize coupons using a **binder with labeled sections**, and a related insight suggests combining **digital coupon apps (like Cartwheel/Target)** with a physical binder system \u2014 however, this is just a general insight and cannot be used to confirm the specific redemption location for this particular coupon.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response does not contain the correct answer (Target); it states the location is unknown, though it vaguely mentions Target in a different context.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1000.9,
+        "recall_s": 5.1,
+        "answer_s": 6.0,
+        "judge_s": 1.7
+      },
+      "extraction_stats": {
+        "facts": 533,
+        "ideas": 241,
+        "entities": 709,
+        "rels": 412,
+        "decisions": 152,
+        "questions": 213,
+        "sessions": 50,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 50
+    },
+    {
+      "question_id": "89527b6b",
+      "question_type": "single-session-assistant",
+      "question": "I'm going back to our previous conversation about the children's book on dinosaurs. Can you remind me what color was the scaly body of the Plesiosaur in the image?",
+      "correct_answer": "The Plesiosaur had a blue scaly body.",
+      "predicted_answer": "## Regarding the Plesiosaur's Color in the Children's Book\n\nBased on all the retrieved context, I can confirm that the conversation from **2023/05/23 (Tue) 06:44** does reference the children's book **\"The Amazing Adventures of Dinosaurs\"** that you created, which featured the **T-Rex, Pterodactyl, Plesiosaur, and Triceratops**.\n\nHowever, the source conversation context provided only shows the beginning of the assistant's response for that session, and it gets **cut off** at the T-Rex image description:\n\n> *\"::T-Rex Image:: == A large, fierce-looking T-R...\"*\n\nThe full image description for the **Plesiosaur** \u2014 including the specific color of its scaly body \u2014 is **not captured** in the retrieved context. The conversation chunk was truncated before reaching the Plesiosaur's chapter and its corresponding image description.\n\nTherefore, I **cannot accurately confirm** what color the Plesiosaur's scaly body was described as in that book, as that specific detail is not present in any of the retrieved facts or conversation chunks. I wouldn't want to guess and give you incorrect information about your own book.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response does not contain the correct answer (blue scaly body) and instead states it cannot confirm the color of the Plesiosaur's scaly body.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1136.2,
+        "recall_s": 4.73,
+        "answer_s": 7.4,
+        "judge_s": 1.9
+      },
+      "extraction_stats": {
+        "facts": 639,
+        "ideas": 227,
+        "entities": 681,
+        "rels": 402,
+        "decisions": 139,
+        "questions": 213,
+        "sessions": 45,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 45
+    },
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "question": "How long is my daily commute to work?",
+      "correct_answer": "45 minutes each way",
+      "predicted_answer": "Based on the retrieved context, your daily commute to work is **45 minutes each way, totaling 90 minutes per day**.\n\nThis information comes from a memory recorded on **2023/05/22 (Mon)**, where you mentioned enjoying audiobooks during your daily commute. The source conversation context from that session confirms you were looking for fiction audiobook recommendations specifically to make the most of your commute time, which aligns well with a 45-minute one-way journey.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response contains the correct answer of 45 minutes each way, which matches the correct answer exactly.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1169.3,
+        "recall_s": 3.58,
+        "answer_s": 4.0,
+        "judge_s": 2.1
+      },
+      "extraction_stats": {
+        "facts": 594,
+        "ideas": 219,
+        "entities": 789,
+        "rels": 387,
+        "decisions": 141,
+        "questions": 197,
+        "sessions": 45,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 45
+    },
+    {
+      "question_id": "c4f10528",
+      "question_type": "single-session-assistant",
+      "question": "I'm planning to visit Bandung again and I was wondering if you could remind me of the name of that restaurant in Cihampelas Walk that serves a great Nasi Goreng?",
+      "correct_answer": "Miss Bee Providore",
+      "predicted_answer": "## Miss Bee Providore at Cihampelas Walk\n\nThe restaurant you're thinking of is **Miss Bee Providore**, located at **Cihampelas Walk (Ciwalk)** in Bandung!\n\nHere are the details I have about it from our previous conversation:\n\n- **Cuisine**: Miss Bee Providore serves a **mix of Western and Indonesian cuisine** in a cozy and stylish interior.\n- **Signature Nasi Goreng**: Their signature **Nasi Goreng is served with prawn crackers and topped with a fried egg** \u2014 which is what you were particularly excited about trying.\n- **Your Plans**: You had previously planned to eat Miss Bee's Nasi Goreng along with their **chocolate brownie** during your Bandung visit.\n\nAs a reminder, Cihampelas Walk (also known as **Ciwalk**) is a shopping center famous for its **denim street**, so you might also want to check that out while you're there. It was also noted that Ciwalk serves as both a **shopping destination and dining hub**, combining retail with food and beverage options \u2014 making it a great spot to spend a good chunk of your day!\n\nEnjoy your trip back to Bandung! \ud83c\udf73\ud83c\udf5a",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 'Miss Bee Providore' as the restaurant at Cihampelas Walk that serves Nasi Goreng, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1210.9,
+        "recall_s": 3.92,
+        "answer_s": 7.3,
+        "judge_s": 2.1
+      },
+      "extraction_stats": {
+        "facts": 626,
+        "ideas": 221,
+        "entities": 669,
+        "rels": 386,
+        "decisions": 149,
+        "questions": 200,
+        "sessions": 44,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 44
+    },
+    {
+      "question_id": "7161e7e2",
+      "question_type": "single-session-assistant",
+      "question": "I'm checking our previous chat about the shift rotation sheet for GM social media agents. Can you remind me what was the rotation for Admon on a Sunday?",
+      "correct_answer": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+      "predicted_answer": "Based on the retrieved context from your previous chat session on **2023/05/24 (Wed)**, here is Admon's rotation on **Sunday**:\n\n**Admon worked the 8am\u20134pm shift (Day Shift) on Sunday.**\n\nThis is explicitly recorded in the shift rotation fact:\n> *\"On Sunday: Admon (8am-4pm), Magdy (12pm-8pm), Ehab (4pm-12am), Sara (12am-8am).\"*\n\nFor additional context, the full Sunday lineup was:\n1. **Admon** \u2013 8am to 4pm (Day Shift)\n2. **Magdy** \u2013 12pm to 8pm (Afternoon Shift)\n3. **Ehab** \u2013 4pm to 12am (Evening Shift)\n4. **Sara** \u2013 12am to 8am (Night Shift)\n\nThe remaining 3 agents \u2014 **Mostafa, Nemr, and Adam** \u2014 had Sunday off, which aligns with the rule that each agent gets **2 days off per week** out of the 7-agent rotation covering 4 shifts per day.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly states that Admon worked the 8am\u20134pm shift (Day Shift) on Sunday, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1216.8,
+        "recall_s": 2.3,
+        "answer_s": 6.2,
+        "judge_s": 2.4
+      },
+      "extraction_stats": {
+        "facts": 613,
+        "ideas": 226,
+        "entities": 753,
+        "rels": 408,
+        "decisions": 148,
+        "questions": 209,
+        "sessions": 48,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 48
+    },
+    {
+      "question_id": "1e043500",
+      "question_type": "single-session-user",
+      "question": "What is the name of the playlist I created on Spotify?",
+      "correct_answer": "Summer Vibes",
+      "predicted_answer": "Based on the retrieved context, your Spotify playlist is called **\"Summer Vibes\"**. It contains chill tracks that you use for relaxing or working out. This information comes from a session dated **2023/05/21 (Sun) 13:13**, where it was noted that you have been listening to a lot of music and podcasts lately, and that you are particularly interested in **ambient and lo-fi music genres**.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies the playlist name as 'Summer Vibes', which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1230.0,
+        "recall_s": 0.86,
+        "answer_s": 3.7,
+        "judge_s": 1.3
+      },
+      "extraction_stats": {
+        "facts": 608,
+        "ideas": 240,
+        "entities": 823,
+        "rels": 420,
+        "decisions": 135,
+        "questions": 212,
+        "sessions": 50,
+        "cached": 1,
+        "skipped": 0
+      },
+      "num_sessions": 50
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "question": "What degree did I graduate with?",
+      "correct_answer": "Business Administration",
+      "predicted_answer": "Based on the retrieved context, you graduated with a degree in **Business Administration**.\n\nThis is recorded as a long-term personal fact from the session dated **2023/05/30 (Tue) 17:27**, and there is only one reference to your educational background in the available memories, so this is the definitive answer.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies that the degree is in Business Administration, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1231.6,
+        "recall_s": 0.96,
+        "answer_s": 2.5,
+        "judge_s": 1.2
+      },
+      "extraction_stats": {
+        "facts": 627,
+        "ideas": 257,
+        "entities": 771,
+        "rels": 448,
+        "decisions": 164,
+        "questions": 230,
+        "sessions": 52,
+        "cached": 0,
+        "skipped": 1
+      },
+      "num_sessions": 53
+    },
+    {
+      "question_id": "58bf7951",
+      "question_type": "single-session-user",
+      "question": "What play did I attend at the local community theater?",
+      "correct_answer": "The Glass Menagerie",
+      "predicted_answer": "Based on the retrieved context, you attended a production of **The Glass Menagerie** at your local community theater.\n\nHere are some additional details surrounding that experience:\n\n- **The Glass Menagerie** is a play written by **Tennessee Williams**, known for exploring complex family relationships and themes. It is also considered autobiographical, drawing from Tennessee Williams' own family dynamics.\n- You were **impressed by the lead actress's performance** in the production.\n- The lead actress reminded you of your friend **Emily**, who is an aspiring actress herself.\n- This theater visit appears to have taken place around **May 26, 2023**, based on the session date of the related memories.\n\nThis experience also seems to have been connected to your own interest in acting, as around the same time you had recently **auditioned for a role in The Crucible** (though the audition did not go well) and were looking into taking acting classes for adults to improve your skills in areas like character development, script analysis, and getting into character authentically.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 'The Glass Menagerie' as the play attended at the local community theater, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1266.5,
+        "recall_s": 0.53,
+        "answer_s": 5.7,
+        "judge_s": 1.8
+      },
+      "extraction_stats": {
+        "facts": 704,
+        "ideas": 266,
+        "entities": 971,
+        "rels": 480,
+        "decisions": 160,
+        "questions": 222,
+        "sessions": 57,
+        "cached": 1,
+        "skipped": 0
+      },
+      "num_sessions": 57
+    },
+    {
+      "question_id": "0a995998",
+      "question_type": "multi-session",
+      "question": "How many items of clothing do I need to pick up or return from a store?",
+      "correct_answer": 3,
+      "predicted_answer": "",
+      "is_correct": false,
+      "is_invalid": true,
+      "judge_reasoning": "",
+      "error": "'str' object has no attribute 'get'",
+      "timings": {},
+      "extraction_stats": {},
+      "num_sessions": 44
+    },
+    {
+      "question_id": "e9327a54",
+      "question_type": "single-session-assistant",
+      "question": "I'm planning to revisit Orlando. I was wondering if you could remind me of that unique dessert shop with the giant milkshakes we talked about last time?",
+      "correct_answer": "The Sugar Factory at Icon Park.",
+      "predicted_answer": "## Regarding the Unique Dessert Shop with Giant Milkshakes in Orlando\n\nI appreciate you asking, but I have to be transparent with you: **I don't actually have any record in our previous conversations of discussing a specific dessert shop with giant milkshakes in Orlando.**\n\nWhat I *do* have from our past discussions about your Orlando trip (from the session dated **2023/05/21**) includes:\n\n- Your family described themselves as **\"dessert fanatics\"** who love trying new things\n- Your family was interested in **visiting multiple dessert spots in one night as a challenge**\n- You expressed **distrust of buffet restaurants** when dining options came up\n- The related context mentions Orlando's dessert scene includes places like **Gideon's Bakehouse** and **The Glass Knife** (higher-end options) as well as **Voodoo Doughnut** and various ice cream shops (more casual experiences)\n\nHowever, **none of these were specifically described as a shop with \"giant milkshakes,\"** and I cannot confirm that we ever discussed such a specific place together. It's possible you may be thinking of a conversation from a different source or a recommendation you came across elsewhere.\n\nIf you'd like, I can help you search for dessert shops in Orlando known for giant or over-the-top milkshakes based on your family's preferences as dessert enthusiasts!",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response does not mention 'The Sugar Factory at Icon Park,' which is the correct answer to the question about the unique dessert shop with giant milkshakes in Orlando.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1195.6,
+        "recall_s": 2.28,
+        "answer_s": 8.5,
+        "judge_s": 3.0
+      },
+      "extraction_stats": {
+        "facts": 615,
+        "ideas": 230,
+        "entities": 740,
+        "rels": 422,
+        "decisions": 153,
+        "questions": 217,
+        "sessions": 50,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 50
+    },
+    {
+      "question_id": "4c36ccef",
+      "question_type": "single-session-assistant",
+      "question": "Can you remind me of the name of the romantic Italian restaurant in Rome you recommended for dinner?",
+      "correct_answer": "Roscioli",
+      "predicted_answer": "Based on the retrieved context, the romantic Italian restaurant in Rome that was recommended for dinner is **Roscioli**.\n\nHere are the key details about it:\n\n- **Location**: Near the **Campo dei Fiori market** in Rome\n- **Type**: A gastronomic delicatessen and restaurant\n- **Atmosphere**: Described as having a **cozy, intimate atmosphere with soft lighting**, making it ideal for a romantic dinner\n- **Food focus**: High-quality ingredients with a focus on the finest quality products and dishes\n- **Special feature**: Also offers unique experiences including **private wine and cheese tastings**\n\nNotably, from the Key Decisions in memory, **you (the user) chose Roscioli as the preferred restaurant for the romantic dinner**, confirming it was the selected choice among the several Roman restaurants that were recommended. There is also an open question in memory about whether you successfully made a reservation there for the following evening, so you may want to confirm that booking if you haven't already!",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies Roscioli as the romantic Italian restaurant in Rome that was recommended for dinner, which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1114.0,
+        "recall_s": 4.04,
+        "answer_s": 7.5,
+        "judge_s": 1.7
+      },
+      "extraction_stats": {
+        "facts": 558,
+        "ideas": 233,
+        "entities": 766,
+        "rels": 388,
+        "decisions": 157,
+        "questions": 217,
+        "sessions": 49,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 49
+    },
+    {
+      "question_id": "gpt4_59c863d7",
+      "question_type": "multi-session",
+      "question": "How many model kits have I worked on or bought?",
+      "correct_answer": "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro.",
+      "predicted_answer": "Based on all the retrieved context, here is a comprehensive list of model kits the user has worked on or bought:\n\n1. **Revell F-15 Eagle** \u2013 Recently finished; purchased during a trip to a hobby store in late April 2023.\n2. **Tamiya 1/48 scale Spitfire Mk.V** \u2013 Recently completed (as of 2023/05/30), with metal surfaces.\n3. **Tamiya 1/72 scale B-29 Bomber** \u2013 Acquired at a model show last weekend (prior to 2023/05/20); upcoming project where the user plans to experiment with enamel washes and photo-etching techniques.\n4. **1/24 scale '69 Camaro** \u2013 Also acquired at the same model show last weekend (prior to 2023/05/20).\n5. **1/16 scale German Tiger I tank** \u2013 Currently being built as a diorama with a forested riverbank environment.\n\n---\n\n**Total: 5 model kits** that have been worked on or bought.\n\nAdditionally, the user has **progressed from simple model kits to advanced techniques** like photo-etching and wire detailing, suggesting there may have been earlier kits not specifically named in the retrieved context. The user has also been using **AK Interactive weathering products** and is considering upgrading their airbrush, further confirming an active and ongoing modeling hobby.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The response correctly identifies all five model kits and their scales, matching the correct answer exactly.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1065.1,
+        "recall_s": 1.41,
+        "answer_s": 9.6,
+        "judge_s": 1.4
+      },
+      "extraction_stats": {
+        "facts": 564,
+        "ideas": 228,
+        "entities": 738,
+        "rels": 399,
+        "decisions": 139,
+        "questions": 206,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "6d550036",
+      "question_type": "multi-session",
+      "question": "How many projects have I led or am currently leading?",
+      "correct_answer": 2,
+      "predicted_answer": "Based on the retrieved context, I can identify the following projects that you have led or are currently leading:\n\n1. **High-priority work project** (completed) \u2014 You completed a high-priority project two months ahead of schedule, which led to a significant increase in company revenue. This was led as a **senior software engineer** (promoted three months ago as of May 28, 2023), leading a team of five engineers.\n\n2. **Marketing Research class project** (past) \u2014 You led a **data analysis team** in a Marketing Research class project involving a comprehensive market analysis for a new product launch (as of May 21, 2023).\n\n3. **Data Mining class solo project** (ongoing) \u2014 You are working on a **solo project** for a Data Mining class involving customer purchase data (as of May 29, 2023).\n\n4. **Customer data analysis project** (ongoing) \u2014 You are working on a project **analyzing customer data** to identify trends and patterns using clustering analysis (as of May 21, 2023). This may overlap with the Data Mining class project above, but it is listed as a separate fact.\n\n5. **Mixed-media project** (planned) \u2014 You were planning a **mixed-media project combining wood and stone** for your Saturday sculpting class (as of May 24, 2023).\n\n---\n\n**Summary:** In total, there are at least **4\u20135 distinct projects** identified, depending on whether the customer data analysis and the Data Mining class project are the same. Of these, **2 are ongoing/current**, **1 is planned**, and **at least 2 are completed or past**.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model response does not contain the correct answer of 2; instead, it concludes there are '4\u20135 distinct projects' and identifies 2 as ongoing/current, which does not match the correct answer of 2 total projects led or currently leading.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1107.4,
+        "recall_s": 2.34,
+        "answer_s": 10.1,
+        "judge_s": 2.3
+      },
+      "extraction_stats": {
+        "facts": 583,
+        "ideas": 220,
+        "entities": 665,
+        "rels": 386,
+        "decisions": 145,
+        "questions": 216,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "e831120c",
+      "question_type": "multi-session",
+      "question": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?",
+      "correct_answer": "3.5 weeks",
+      "predicted_answer": "Based on the retrieved context, here is a detailed breakdown:\n\n## MCU Marathon\n- The user watched **all 22 Marvel Cinematic Universe movies in two weeks** (mentioned in the session dated 2023/05/23).\n\n## Star Wars Marathon\n- The user completed a Star Wars marathon watching all main films **in a week and a half** (mentioned in the session dated 2023/05/25).\n- This included **Episodes I\u2013IX plus Rogue One and Solo** (11 films total).\n\n## Total Time Combined\n\n- MCU: **2 weeks**\n- Star Wars: **1.5 weeks**\n- **Total: 3.5 weeks** to watch both the Marvel Cinematic Universe movies and the main Star Wars films.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly calculates the total time as 3.5 weeks (2 weeks for MCU + 1.5 weeks for Star Wars), which matches the correct answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1134.6,
+        "recall_s": 1.36,
+        "answer_s": 5.4,
+        "judge_s": 1.4
+      },
+      "extraction_stats": {
+        "facts": 580,
+        "ideas": 223,
+        "entities": 1065,
+        "rels": 394,
+        "decisions": 141,
+        "questions": 202,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "gpt4_59149c77",
+      "question_type": "temporal-reasoning",
+      "question": "How many days passed between my visit to the Museum of Modern Art (MoMA) and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art?",
+      "correct_answer": "7 days. 8 days (including the last day) is also acceptable.",
+      "predicted_answer": "Based on the retrieved context, I cannot calculate the number of days between the user's visit to MoMA and the 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art.\n\nHere's what I do know:\n\n1. **MoMA Visit**: The user visited the Museum of Modern Art (MoMA) on **2023/01/08 (Sunday)**, attending a guided tour focused on 20th-century modern art movements.\n\n2. **'Ancient Civilizations' exhibit at the Metropolitan Museum of Art**: There is **no record** in any of the retrieved context \u2014 facts, conversation chunks, or additional context \u2014 of the user visiting an 'Ancient Civilizations' exhibit at the Metropolitan Museum of Art. While there are references to the Metropolitan Museum of Art (specifically the Temple of Dendur in the Sackler Wing), there is no mention of the user attending or planning to attend an 'Ancient Civilizations' exhibit there.\n\nSince one of the two required dates/events is missing from the memory, it is **not possible to calculate** the number of days between these two events. If the user did visit such an exhibit, that information was not captured in the available context.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model did not provide the correct answer of 7 days; instead, it claimed it could not find the necessary information to calculate the difference.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1133.0,
+        "recall_s": 1.74,
+        "answer_s": 7.8,
+        "judge_s": 2.0
+      },
+      "extraction_stats": {
+        "facts": 608,
+        "ideas": 234,
+        "entities": 679,
+        "rels": 443,
+        "decisions": 139,
+        "questions": 217,
+        "sessions": 48,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 48
+    },
+    {
+      "question_id": "b5ef892d",
+      "question_type": "multi-session",
+      "question": "How many days did I spend on camping trips in the United States this year?",
+      "correct_answer": "8 days.",
+      "predicted_answer": "## Camping Days in the United States in 2023\n\nBased on the retrieved context, I can identify **two camping trips** the user took in the United States in 2023:\n\n1. **5-day camping trip to Yellowstone National Park** \u2014 completed \"last month\" (relative to the question date of April 29, 2023), so approximately in March 2023.\n2. **3-day solo camping trip to Big Sur, California** \u2014 completed in early April 2023.\n\n### Total: **8 days** of camping in the United States in 2023\n\nIt's worth noting that the user also had a **7-day family road trip to Utah in February 2023**, but that trip explicitly **did not include camping** \u2014 it involved driving and hiking only \u2014 so those days are **not counted**.\n\nThe planned **10-day trek in New Zealand in November 2023** is both in the future (relative to the question date) and outside the United States, so it is also excluded.",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model response correctly identifies 8 days as the total number of days spent on camping trips in the United States, breaking it down into a 5-day trip to Yellowstone and a 3-day trip to Big Sur.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1178.1,
+        "recall_s": 0.26,
+        "answer_s": 6.1,
+        "judge_s": 1.6
+      },
+      "extraction_stats": {
+        "facts": 620,
+        "ideas": 265,
+        "entities": 895,
+        "rels": 445,
+        "decisions": 143,
+        "questions": 227,
+        "sessions": 52,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 52
+    },
+    {
+      "question_id": "6a1eabeb",
+      "question_type": "knowledge-update",
+      "question": "What was my personal best time in the charity 5K run?",
+      "correct_answer": "25 minutes and 50 seconds (or 25:50)",
+      "predicted_answer": "Based on the retrieved context, your personal best 5K run time was **27:12 minutes**, achieved as of **May 23, 2023**.\n\nThis is noted in the relevant facts: *\"User recently achieved a personal best 5K run time of 27:12 minutes\"* (recorded on 2023/05/23).\n\nIt's also worth noting that as of **May 30, 2023**, you were actively training for a **charity 5K run** with the goal of **beating 25:50**, meaning your personal best of 27:12 was the benchmark you were working to improve upon, aiming to shave off approximately 1 minute and 22 seconds or more from that time.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The gold answer is 25 minutes and 50 seconds (25:50), but the model's answer states the personal best was 27:12, which is incorrect (25:50 was the goal time, not the personal best).",
+      "error": null,
+      "timings": {
+        "extraction_s": 786.9,
+        "recall_s": 3.72,
+        "answer_s": 5.1,
+        "judge_s": 1.9
+      },
+      "extraction_stats": {
+        "facts": 455,
+        "ideas": 211,
+        "entities": 565,
+        "rels": 339,
+        "decisions": 135,
+        "questions": 184,
+        "sessions": 40,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 40
+    },
+    {
+      "question_id": "gpt4_f49edff3",
+      "question_type": "temporal-reasoning",
+      "question": "Which three events happened in the order from first to last: the day I helped my friend prepare the nursery, the day I helped my cousin pick out stuff for her baby shower, and the day I ordered a customized phone case for my friend's birthday?",
+      "correct_answer": "First, I helped my friend prepare the nursery, then I helped my cousin pick out stuff for her baby shower, and lastly, I ordered a customized phone case for my friend's birthday.",
+      "predicted_answer": "Based on the retrieved context, I can identify the dates of all three events:\n\n1. **Helping the friend prepare the nursery** \u2014 The context does not contain a specific date for this event. There is no memory or source conversation chunk that mentions the user helping a friend prepare a nursery.\n\n2. **Helping the cousin pick out stuff for her baby shower** \u2014 This is recorded as: *[short] [2023/02/10 (Fri) 21:05] User recently helped their cousin pick out baby items including diapers, wipes, and a baby monitor at Target.* \u2192 **February 10, 2023**\n\n3. **Ordering a customized phone case for a friend's birthday** \u2014 This is recorded as: *[short] [2023/02/20 (Mon) 13:12] User recently ordered a customized phone case for their friend's birthday, which the friend loves.* \u2192 **February 20, 2023**\n\n---\n\nSince there is **no memory or record of the user helping a friend prepare a nursery**, I cannot place that event in the chronological order. I can only confirm the order of the two events I have dates for:\n\n- **First:** Helping the cousin pick out baby items at Target \u2014 **February 10, 2023**\n- **Second:** Ordering the customized phone case \u2014 **February 20, 2023**\n\nThe nursery preparation event cannot be ordered because it does not appear anywhere in the retrieved context.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The model could not find the nursery event and therefore did not provide the correct order of all three events as required by the gold answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1094.9,
+        "recall_s": 4.43,
+        "answer_s": 8.2,
+        "judge_s": 1.8
+      },
+      "extraction_stats": {
+        "facts": 594,
+        "ideas": 211,
+        "entities": 727,
+        "rels": 379,
+        "decisions": 121,
+        "questions": 204,
+        "sessions": 47,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 47
+    },
+    {
+      "question_id": "852ce960",
+      "question_type": "knowledge-update",
+      "question": "What was the amount I was pre-approved for when I got my mortgage from Wells Fargo?",
+      "correct_answer": "$400,000",
+      "predicted_answer": "## Wells Fargo Pre-Approval Amount\n\nBased on the retrieved context, there are **two different values** mentioned for your Wells Fargo pre-approval:\n\n1. **$350,000** \u2014 This is recorded in the facts from the session dated **2023/08/11 (Fri)**, which is the earlier and more detailed session specifically about your home purchase. This is supported by multiple corroborating details:\n   - Purchase price of $325,000\n   - Estimated down payment of $25,000 ($350,000 - $325,000)\n   - Estimated loan amount of $300,000\n\n2. **$400,000** \u2014 This figure appears in the **2023/11/30 (Thu)** session, where you mentioned \"remember when I got pre-approved for $400,000 from Wells Fargo?\" in passing, while asking about cable/TV services.\n\n### Which is More Accurate?\n\nThe **$350,000** figure from August 11, 2023 is more likely the accurate pre-approval amount, as it comes from a dedicated home-buying session with detailed, consistent financial breakdowns (purchase price, down payment, loan amount, monthly payment estimates). The $400,000 figure appears as a casual, offhand remark in a later conversation about an unrelated topic, which may have been a misremembering on your part.\n\nThat said, both values are present in your conversation history, so **$350,000** is the most well-supported pre-approval amount from Wells Fargo.",
+      "is_correct": false,
+      "is_invalid": false,
+      "judge_reasoning": "The generated answer contains the correct answer of $400,000 but ultimately concludes that $350,000 is the more accurate figure, making the final answer incorrect.",
+      "error": null,
+      "timings": {
+        "extraction_s": 907.2,
+        "recall_s": 2.24,
+        "answer_s": 9.9,
+        "judge_s": 2.4
+      },
+      "extraction_stats": {
+        "facts": 467,
+        "ideas": 189,
+        "entities": 595,
+        "rels": 337,
+        "decisions": 122,
+        "questions": 187,
+        "sessions": 39,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 39
+    },
+    {
+      "question_id": "b46e15ed",
+      "question_type": "temporal-reasoning",
+      "question": "How many months have passed since I participated in two charity events in a row, on consecutive days?",
+      "correct_answer": 2,
+      "predicted_answer": "## Charity Events on Consecutive Days\n\nTo answer this question, I need to identify two charity events that occurred on **consecutive days**.\n\nLet me scan all the charity events mentioned in the context:\n\n1. **2023/01/30 (Mon)** \u2013 Cancer Research Foundation charity gala at a downtown hotel\n2. **2023/02/13 (Mon)** \u2013 (unrelated sporting event context)\n3. **2023/02/14 (Tue)** \u2013 **24-Hour Bike Ride** charity event (cycled for 4 hours non-stop) for a local children's hospital\n4. **2023/02/15 (Wed)** \u2013 **'Books for Kids'** charity book drive event at their local library\n5. **2023/02/15 (Wed)** \u2013 'Ride to Cure Cancer' charity bike ride (40 miles) \u2014 though this appears to have happened sometime before Feb 15\n6. **2023/03/19 (Sun)** \u2013 Walk for Hunger (5km) with work colleagues\n\n### Consecutive Days Found:\n- **February 14 (Tuesday)** \u2013 24-Hour Bike Ride charity event\n- **February 15 (Wednesday)** \u2013 'Books for Kids' charity book drive event\n\nThese two events occurred on **consecutive days**.\n\n---\n\n### Calculating Months Passed:\n\n- **Event dates:** February 14\u201315, 2023\n- **Question date:** April 18, 2023\n\nFrom **mid-February 2023** to **mid-April 2023** is approximately **2 months**.\n\nSo roughly **2 months** have passed since you participated in those two charity events on consecutive days (February 14 and February 15, 2023).",
+      "is_correct": true,
+      "is_invalid": false,
+      "judge_reasoning": "The model correctly identifies the two consecutive charity events (February 14 and 15, 2023) and calculates approximately 2 months have passed, matching the gold answer.",
+      "error": null,
+      "timings": {
+        "extraction_s": 1092.7,
+        "recall_s": 1.47,
+        "answer_s": 8.9,
+        "judge_s": 2.0
+      },
+      "extraction_stats": {
+        "facts": 545,
+        "ideas": 226,
+        "entities": 624,
+        "rels": 376,
+        "decisions": 137,
+        "questions": 196,
+        "sessions": 46,
+        "cached": 0,
+        "skipped": 0
+      },
+      "num_sessions": 46
+    }
+  ]
+}

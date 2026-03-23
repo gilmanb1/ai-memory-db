@@ -4,3 +4,4 @@ __pycache__/
 *.duckdb.wal
 .claude/
 *.log
+bench/LMEB

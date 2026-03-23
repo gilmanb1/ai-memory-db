@@ -108,6 +108,80 @@ def delete_recall_cache(session_id: str) -> None:
         pass
 
 
+# ── Pre-fetch cache (speculative recall for fast prompt response) ────────
+
+def _prefetch_path(session_id: str) -> Path:
+    return STATE_DIR / f"{_sanitize_id(session_id)}_prefetch.json"
+
+
+def save_prefetch(session_id: str, context_json: str, embedding: list[float]) -> None:
+    """Save pre-fetched recall context and its embedding for fast cache-hit detection."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _prefetch_path(session_id)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"context": context_json, "embedding": embedding, "ts": time.time()}, fh)
+    tmp.rename(path)
+
+
+def load_prefetch(session_id: str, max_age_s: float = 120.0) -> Optional[dict]:
+    """Load pre-fetched context if fresh (within max_age_s). Returns {context, embedding} or None."""
+    try:
+        with open(_prefetch_path(session_id), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if time.time() - data.get("ts", 0) > max_age_s:
+            return None
+        return data
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+
+
+# ── Defensive pre-fetch cache (guardrails/procedures by file path) ────
+
+def _defensive_prefetch_path(session_id: str) -> Path:
+    return STATE_DIR / f"{_sanitize_id(session_id)}_defensive.json"
+
+
+def save_defensive_prefetch(
+    session_id: str,
+    file_paths: list[str],
+    results: dict,
+) -> None:
+    """Save pre-fetched defensive knowledge for file paths."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _defensive_prefetch_path(session_id)
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({
+            "file_paths": sorted(file_paths),
+            "results": results,
+            "ts": time.time(),
+        }, fh, default=str)
+    tmp.rename(path)
+
+
+def load_defensive_prefetch(
+    session_id: str,
+    file_paths: list[str],
+    max_age_s: float = 120.0,
+) -> Optional[dict]:
+    """
+    Load cached defensive knowledge if fresh and covers the requested file paths.
+    Returns the results dict on cache hit, None on miss.
+    """
+    try:
+        with open(_defensive_prefetch_path(session_id), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if time.time() - data.get("ts", 0) > max_age_s:
+            return None
+        cached_paths = set(data.get("file_paths", []))
+        if set(file_paths).issubset(cached_paths):
+            return data.get("results")
+        return None
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+
+
 # ── Running lock (prevents concurrent passes) ───────────────────────────
 
 def acquire_running_lock(session_id: str) -> bool:

@@ -54,7 +54,7 @@ echo "ok Memory package installed"
 echo ""
 echo "-> Installing hooks to ${HOOKS_DIR}/ ..."
 mkdir -p "$HOOKS_DIR"
-for hook in pre_compact session_start session_end user_prompt_submit status_line _extract_worker remember_cmd forget_cmd reflect_cmd memory_mcp_server; do
+for hook in pre_compact session_start session_end user_prompt_submit status_line _extract_worker remember_cmd forget_cmd reflect_cmd memory_mcp_server post_tool_use; do
   cp "$SCRIPT_DIR/hooks/${hook}.py" "${HOOKS_DIR}/${hook}.py"
   chmod +x "${HOOKS_DIR}/${hook}.py"
   echo "  ok ${hook}.py"
@@ -114,6 +114,10 @@ new_hooks = {
     "UserPromptSubmit": [{
         "matcher": "",
         "hooks": [{"type": "command", "command": f"{hook_prefix}/user_prompt_submit.py"}]
+    }],
+    "PostToolUse": [{
+        "matcher": "",
+        "hooks": [{"type": "command", "command": f"{hook_prefix}/post_tool_use.py"}]
     }],
 }
 

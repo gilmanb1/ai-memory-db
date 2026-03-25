@@ -634,47 +634,49 @@ def run_incremental_extraction(
     # ── Resolve scope ────────────────────────────────────────────────────
     scope = resolve_scope(cwd)
 
-    # ── Gather existing items for superseding ────────────────────────────
+    # ── Gather existing items for superseding (read-only connection) ─────
     existing_items = []
-    conn = db.get_connection()
-
-    if pass_count == 0 and session_recall_items:
-        # Pass 1: use cached session-start recall items
-        existing_items = session_recall_items
-    elif pass_count == 0:
-        # Pass 1 without cache: load from recall cache file
-        cached = extraction_state.load_recall_cache(session_id)
-        if cached:
-            existing_items = cached
+    ro_conn = db.get_connection(read_only=True)
+    try:
+        if pass_count == 0 and session_recall_items:
+            # Pass 1: use cached session-start recall items
+            existing_items = session_recall_items
+        elif pass_count == 0:
+            # Pass 1 without cache: load from recall cache file
+            cached = extraction_state.load_recall_cache(session_id)
+            if cached:
+                existing_items = cached
+            else:
+                # Fallback: embed first 1000 chars and search
+                snippet = delta_text[:4000]  # ~1000 tokens
+                snippet_emb = embeddings.embed(snippet)
+                if snippet_emb:
+                    facts = db.search_facts(ro_conn, snippet_emb, limit=5, threshold=RECALL_THRESHOLD, scope=scope)
+                    decisions = db.search_facts(ro_conn, snippet_emb, limit=3, threshold=RECALL_THRESHOLD, scope=scope)
+                    existing_items = [
+                        {"id": r["id"], "text": r["text"], "table": "facts"} for r in facts
+                    ] + [
+                        {"id": r["id"], "text": r["text"], "table": "decisions"} for r in decisions
+                    ]
         else:
-            # Fallback: embed first 1000 chars and search
-            snippet = delta_text[:4000]  # ~1000 tokens
-            snippet_emb = embeddings.embed(snippet)
-            if snippet_emb:
-                facts = db.search_facts(conn, snippet_emb, limit=5, threshold=RECALL_THRESHOLD, scope=scope)
-                decisions = db.search_facts(conn, snippet_emb, limit=3, threshold=RECALL_THRESHOLD, scope=scope)
-                existing_items = [
-                    {"id": r["id"], "text": r["text"], "table": "facts"} for r in facts
-                ] + [
-                    {"id": r["id"], "text": r["text"], "table": "decisions"} for r in decisions
-                ]
-    else:
-        # Pass 2+: use prior narrative to find relevant existing items
-        if prior_narrative:
-            narrative_emb = embeddings.embed(prior_narrative)
-            if narrative_emb:
-                facts = db.search_facts(conn, narrative_emb, limit=5, threshold=RECALL_THRESHOLD, scope=scope)
-                decs = db.search_facts(conn, narrative_emb, limit=3, threshold=RECALL_THRESHOLD, scope=scope)
-                existing_items = [
-                    {"id": r["id"], "text": r["text"], "table": "facts"} for r in facts
-                ] + [
-                    {"id": r["id"], "text": r["text"], "table": "decisions"} for r in decs
-                ]
+            # Pass 2+: use prior narrative to find relevant existing items
+            if prior_narrative:
+                narrative_emb = embeddings.embed(prior_narrative)
+                if narrative_emb:
+                    facts = db.search_facts(ro_conn, narrative_emb, limit=5, threshold=RECALL_THRESHOLD, scope=scope)
+                    decs = db.search_facts(ro_conn, narrative_emb, limit=3, threshold=RECALL_THRESHOLD, scope=scope)
+                    existing_items = [
+                        {"id": r["id"], "text": r["text"], "table": "facts"} for r in facts
+                    ] + [
+                        {"id": r["id"], "text": r["text"], "table": "decisions"} for r in decs
+                    ]
 
-    # ── Gather prior pass items ──────────────────────────────────────────
-    prior_items = []
-    if any(prior_item_ids.get(t) for t in ("facts", "ideas", "decisions")):
-        prior_items = db.get_items_by_ids(conn, prior_item_ids)
+        # ── Gather prior pass items ──────────────────────────────────────
+        prior_items = []
+        if any(prior_item_ids.get(t) for t in ("facts", "ideas", "decisions")):
+            prior_items = db.get_items_by_ids(ro_conn, prior_item_ids)
+    finally:
+        ro_conn.close()
 
     # ── Build skip embeddings for cross-pass dedup ───────────────────────
     skip_embeddings = []
@@ -683,7 +685,7 @@ def run_incremental_extraction(
         if emb:
             skip_embeddings.append(emb)
 
-    # ── Extract knowledge ────────────────────────────────────────────────
+    # ── Extract knowledge (no DB lock held during API call) ──────────────
     knowledge = None
     for attempt in range(2):
         try:
@@ -701,12 +703,13 @@ def run_incremental_extraction(
                 time.sleep(2)
             else:
                 _err(f"[memory/ingest] Incremental extraction failed after retry: {exc}")
-                conn.close()
                 return None
 
     if knowledge is None:
-        conn.close()
         return None
+
+    # ── Open write connection only for the storage phase ──────────────────
+    conn = db.get_connection()
 
     # ── Upsert session ───────────────────────────────────────────────────
     db.upsert_session(

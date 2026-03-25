@@ -17,6 +17,7 @@ import {
   Eye,
   Clock,
   HelpCircle,
+  Code2,
 } from "lucide-react";
 
 const STAT_CARDS = [
@@ -46,6 +47,21 @@ export default function DashboardPage() {
       <h2 className="text-xl font-semibold mb-4">Knowledge Base Overview</h2>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <Link href="/code-graph">
+          <Card className="bg-gradient-to-br from-sky-500/10 to-sky-600/5 border-border/50 cursor-pointer hover:border-border transition-colors">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <Code2 className="w-4 h-4 text-sky-500" />
+                Code Graph
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                Files, symbols &amp; dependencies
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
         {STAT_CARDS.map(({ key, label, href, icon: Icon, color, bg }) => {
           const stat = stats?.[key];
           if (!stat) return null;

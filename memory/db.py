@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import time
+import logging
+
 import duckdb
 
 from .config import (
@@ -342,6 +345,46 @@ MIGRATIONS: list[tuple[int, str, str]] = [
             deactivated_at  TIMESTAMP
         );
     """),
+
+    (10, "Add code graph tables with language support", """
+    CREATE TABLE IF NOT EXISTS code_symbols (
+        id              VARCHAR PRIMARY KEY,
+        file_path       VARCHAR NOT NULL,
+        symbol_name     VARCHAR NOT NULL,
+        symbol_type     VARCHAR NOT NULL,
+        language        VARCHAR DEFAULT 'python',
+        line_number     INTEGER,
+        signature       TEXT,
+        docstring       TEXT,
+        scope           VARCHAR DEFAULT '__global__',
+        parsed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS code_symbols_unique
+        ON code_symbols(file_path, symbol_name, symbol_type);
+
+    CREATE TABLE IF NOT EXISTS code_dependencies (
+        id              VARCHAR PRIMARY KEY,
+        from_file       VARCHAR NOT NULL,
+        to_file         VARCHAR NOT NULL,
+        import_name     VARCHAR,
+        import_type     VARCHAR DEFAULT 'import',
+        language        VARCHAR DEFAULT 'python',
+        scope           VARCHAR DEFAULT '__global__',
+        parsed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS code_deps_unique
+        ON code_dependencies(from_file, to_file, import_name);
+
+    CREATE TABLE IF NOT EXISTS code_file_index (
+        file_path       VARCHAR NOT NULL,
+        language        VARCHAR NOT NULL,
+        mtime           DOUBLE NOT NULL,
+        symbol_count    INTEGER DEFAULT 0,
+        scope           VARCHAR DEFAULT '__global__',
+        parsed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (file_path, scope)
+    );
+    """),
 ]
 
 
@@ -374,23 +417,73 @@ def _create_hnsw_indexes(conn: duckdb.DuckDBPyConnection) -> None:
 
 # ── Connection ─────────────────────────────────────────────────────────────
 
+_log = logging.getLogger(__name__)
+
+# Track which DB paths have already been initialised this process to avoid
+# running migrations / extension installs on every connection.
+_initialised_paths: set[str] = set()
+
+# Lock retry settings
+_LOCK_MAX_RETRIES = 5
+_LOCK_BASE_DELAY = 0.15  # seconds; doubles each retry
+
+
 def get_connection(
     read_only: bool = False,
     db_path: Optional[str] = None,
 ) -> duckdb.DuckDBPyConnection:
-    """Open a DuckDB connection, initialise schema on first run.
+    """Open a DuckDB connection, initialise schema on first write connect.
+
+    Retries with exponential backoff when the database is locked by another
+    process (common with multiple Claude Code sessions sharing one DB file).
 
     db_path overrides the config path — useful for tests.
     """
     import memory.config as _config  # read at call time so test overrides work
     path = Path(db_path) if db_path else _config.DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = duckdb.connect(str(path), read_only=read_only)
-    if not read_only:
+    path_str = str(path)
+
+    conn = _connect_with_retry(path_str, read_only)
+
+    needs_init = path_str not in _initialised_paths
+
+    # Write connections: run migrations only on first connect per process
+    if not read_only and needs_init:
         _run_migrations(conn)
+
+    # Extensions: INSTALL only on first write connect; LOAD on every connect
     _try_load_vss(conn)
-    ensure_fts(conn)
+    _load_fts(conn, install=not read_only and needs_init)
+
+    if needs_init and not read_only:
+        _initialised_paths.add(path_str)
+
     return conn
+
+
+def _connect_with_retry(
+    path_str: str, read_only: bool
+) -> duckdb.DuckDBPyConnection:
+    """Open a DuckDB connection, retrying on lock errors with backoff."""
+    delay = _LOCK_BASE_DELAY
+    last_err: Exception | None = None
+    for attempt in range(_LOCK_MAX_RETRIES):
+        try:
+            return duckdb.connect(path_str, read_only=read_only)
+        except duckdb.IOException as exc:
+            err_msg = str(exc).lower()
+            if "lock" not in err_msg and "busy" not in err_msg:
+                raise  # Not a lock error — don't retry
+            last_err = exc
+            if attempt < _LOCK_MAX_RETRIES - 1:
+                _log.debug(
+                    "DB locked (attempt %d/%d), retrying in %.2fs",
+                    attempt + 1, _LOCK_MAX_RETRIES, delay,
+                )
+                time.sleep(delay)
+                delay *= 2
+    raise last_err  # type: ignore[misc]
 
 
 def _try_load_vss(conn: duckdb.DuckDBPyConnection) -> None:
@@ -407,15 +500,33 @@ def _try_load_vss(conn: duckdb.DuckDBPyConnection) -> None:
 _fts_available: bool = False
 
 
-def ensure_fts(conn: duckdb.DuckDBPyConnection) -> None:
-    """Try to INSTALL and LOAD the DuckDB fts extension. Sets _fts_available on success."""
+def _load_fts(conn: duckdb.DuckDBPyConnection, install: bool = False) -> None:
+    """Load (and optionally install) the DuckDB FTS extension.
+
+    INSTALL is a write operation that can conflict with other connections,
+    so it is only performed on the first write connection per process.
+    Read-only connections just LOAD the already-installed extension.
+    """
     global _fts_available
+    if _fts_available:
+        # Already confirmed available — just load into this connection
+        try:
+            conn.execute("LOAD fts")
+        except Exception:
+            pass
+        return
     try:
-        conn.execute("INSTALL fts")
+        if install:
+            conn.execute("INSTALL fts")
         conn.execute("LOAD fts")
         _fts_available = True
     except Exception:
         pass  # FTS not available; leave flag False
+
+
+def ensure_fts(conn: duckdb.DuckDBPyConnection) -> None:
+    """Legacy entry point — delegates to _load_fts with install=True."""
+    _load_fts(conn, install=True)
 
 
 def rebuild_fts_indexes(conn: duckdb.DuckDBPyConnection) -> None:

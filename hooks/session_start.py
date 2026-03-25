@@ -4,6 +4,12 @@
 # dependencies = [
 #   "duckdb>=1.1.0",
 #   "numpy>=1.24.0",
+#   "tree-sitter>=0.24.0",
+#   "tree-sitter-python>=0.25.0",
+#   "tree-sitter-javascript>=0.25.0",
+#   "tree-sitter-typescript>=0.23.0",
+#   "tree-sitter-go>=0.25.0",
+#   "tree-sitter-rust>=0.24.0",
 # ]
 # ///
 """
@@ -26,7 +32,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path.home() / ".claude"))
 
 from memory import db, recall
-from memory.db import ensure_fts
 from memory.scope import resolve_scope
 
 
@@ -52,12 +57,6 @@ def main(payload: dict) -> None:
     conn = None
     try:
         conn = db.get_connection(read_only=True)
-
-        # Pre-warm FTS extension so first prompt recall doesn't pay load cost
-        try:
-            ensure_fts(conn)
-        except Exception:
-            pass  # Non-critical — FTS will be loaded on first use
 
         stats = db.get_stats(conn)
 
@@ -112,6 +111,25 @@ def main(payload: dict) -> None:
     if procedure_count:
         parts.append(f"{procedure_count} procedures")
     print(" | ".join(parts), file=sys.stderr)
+
+    # ── Incremental code graph parse ──────────────────────────────────
+    try:
+        from memory.config import CODE_GRAPH_ENABLED
+        if CODE_GRAPH_ENABLED and cwd:
+            from memory.code_graph import parse_repo
+            cg_conn = db.get_connection(read_only=False)
+            try:
+                cg_stats = parse_repo(cwd, cg_conn, scope)
+                if cg_stats.get("files_parsed", 0) > 0:
+                    print(
+                        f"[memory] Code graph: {cg_stats['files_parsed']} files, "
+                        f"{cg_stats['symbols_found']} symbols",
+                        file=sys.stderr,
+                    )
+            finally:
+                cg_conn.close()
+    except Exception as exc:
+        print(f"[memory] Code graph skipped: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

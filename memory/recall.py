@@ -30,6 +30,7 @@ from .config import (
     PROMPT_RECALL_TIMEOUT_MS,
     CHUNKS_ENABLED, PROMPT_CHUNKS_LIMIT, PROMPT_SIBLINGS_LIMIT, CHUNK_MAX_DISPLAY_CHARS,
     SESSION_COMMUNITY_LIMIT, PROMPT_COMMUNITY_LIMIT,
+    PROMPT_CODE_CONTEXT_LIMIT,
 )
 from .decay import temporal_weight
 
@@ -392,6 +393,49 @@ def _recall_defensive_knowledge(
     }
 
 
+def _recall_code_context(conn, prompt_text: str, scope: Optional[str]) -> list[dict]:
+    """Extract file paths from prompt and fetch code structure."""
+    try:
+        from .code_graph import get_file_symbols, get_dependencies, get_dependents
+        from .retrieval import _extract_file_paths
+    except ImportError:
+        return []
+
+    paths = _extract_file_paths(prompt_text)
+    if not paths:
+        return []
+
+    results = []
+    for fp in paths[:PROMPT_CODE_CONTEXT_LIMIT]:
+        syms = get_file_symbols(conn, fp)
+        if not syms:
+            # Try partial match
+            rows = conn.execute(
+                "SELECT DISTINCT file_path FROM code_symbols WHERE file_path LIKE ? LIMIT 3",
+                [f"%{fp}%"]
+            ).fetchall()
+            for row in rows:
+                syms = get_file_symbols(conn, row[0])
+                if syms:
+                    fp = row[0]
+                    break
+
+        if syms:
+            deps = get_dependencies(conn, fp, scope=scope)
+            dependents = get_dependents(conn, fp, scope=scope)
+            sym_summary = ", ".join(f"{s['symbol_name']}" for s in syms[:15])
+            dep_summary = ", ".join(d["to_file"] for d in deps[:5])
+            results.append({
+                "file": fp,
+                "symbols": sym_summary,
+                "dependencies": dep_summary,
+                "dependent_count": len(dependents),
+                "symbol_count": len(syms),
+            })
+
+    return results
+
+
 def prompt_recall(
     conn: duckdb.DuckDBPyConnection,
     query_embedding: list[float],
@@ -409,6 +453,8 @@ def prompt_recall(
     # ── Defensive knowledge retrieval (guardrails, procedures, errors) ───
     # This runs on every prompt, independent of the main retrieval path.
     defensive = _recall_defensive_knowledge(conn, query_embedding, prompt_text, scope)
+
+    code_context = _recall_code_context(conn, prompt_text, scope)
 
     # Try 4-way parallel retrieval
     try:
@@ -486,6 +532,7 @@ def prompt_recall(
             "retrieval_stats": result.strategy_counts,
             "chunks": chunks,
             "sibling_facts": sibling_facts,
+            "code_context": code_context,
             **defensive,
         }
 
@@ -494,6 +541,7 @@ def prompt_recall(
         legacy = _legacy_prompt_recall(conn, query_embedding, prompt_text, scope)
         # Merge defensive knowledge into legacy results
         legacy.update(defensive)
+        legacy["code_context"] = code_context
         return legacy
 
 
@@ -637,7 +685,7 @@ def format_prompt_context(recall: dict) -> str:
         recall.get("narratives"), recall.get("observations"),
         recall.get("chunks"), recall.get("sibling_facts"),
         recall.get("guardrails"), recall.get("procedures"),
-        recall.get("error_solutions"),
+        recall.get("error_solutions"), recall.get("code_context"),
     ])
     if not has_content:
         return ""
@@ -675,6 +723,20 @@ def format_prompt_context(recall: dict) -> str:
         section = ["### Relevant Procedures"]
         for p in recall["procedures"]:
             section.append(f"- **{p.get('task_description', '')}**: {p.get('steps', '')}")
+        section.append("")
+        budget = _budget_append(lines, section, budget)
+
+    # Code structure section
+    code_ctx = recall.get("code_context", [])
+    if code_ctx and budget > 0:
+        section = ["### Code Structure (active files)"]
+        for c in code_ctx:
+            line = f"- **{c['file']}** ({c['symbol_count']} symbols): {c['symbols']}"
+            if c.get("dependencies"):
+                line += f" | imports: {c['dependencies']}"
+            if c.get("dependent_count", 0) > 0:
+                line += f" | {c['dependent_count']} dependents"
+            section.append(line)
         section.append("")
         budget = _budget_append(lines, section, budget)
 

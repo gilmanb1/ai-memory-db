@@ -75,7 +75,7 @@ NARRATIVE_SEARCH_LIMIT      = 3              # max narratives returned in prompt
 NARRATIVE_TOKEN_BUDGET      = 400            # tokens reserved for narratives in prompt recall
 
 # ── Retrieval strategies ──────────────────────────────────────────────
-RETRIEVAL_STRATEGIES    = ["semantic", "bm25", "graph", "temporal"]
+RETRIEVAL_STRATEGIES    = ["semantic", "bm25", "graph", "temporal", "path", "code"]
 RRF_K                   = 60               # reciprocal rank fusion constant
 RERANK_ENABLED          = False            # cross-encoder reranking (requires extra model)
 RERANK_MODEL            = None             # future: e.g. "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -145,3 +145,14 @@ PROMPT_OBSERVATIONS_LIMIT  = 8            # observations per prompt recall
 
 # ── Latency ──────────────────────────────────────────────────────────
 PROMPT_RECALL_TIMEOUT_MS = 250            # target latency for prompt recall
+
+# ── Code graph ──────────────────────────────────────────────────────
+CODE_GRAPH_ENABLED       = True
+CODE_GRAPH_MAX_FILES     = 2000    # max files parsed per repo
+CODE_GRAPH_SKIP_DIRS     = {
+    "venv", ".venv", "node_modules", ".git", "__pycache__",
+    ".tox", "build", "dist", ".eggs", "target", "vendor", "pkg",
+    ".next", "out", ".turbo",
+}
+SESSION_CODE_CONTEXT_LIMIT = 20    # files shown in session context
+PROMPT_CODE_CONTEXT_LIMIT  = 10    # files shown in prompt context

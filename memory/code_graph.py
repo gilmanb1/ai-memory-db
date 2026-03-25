@@ -1,70 +1,58 @@
 """
-code_graph.py — Parse Python source files, extract symbols and imports,
+code_graph.py — Parse source files, extract symbols and imports,
 store a dependency graph in DuckDB for impact analysis and navigation.
 
-Uses the stdlib `ast` module for parsing. All file paths stored relative
-to the repo root.
+Uses the stdlib `ast` module for Python parsing. Language-agnostic via
+the LanguageParser protocol — register parsers for additional languages.
+All file paths stored relative to the repo root.
 """
 from __future__ import annotations
 
 import ast
 import os
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Protocol, runtime_checkable
 
 import duckdb
 
-from .config import GLOBAL_SCOPE
-
-# ── Schema DDL ────────────────────────────────────────────────────────────────
-
-CODE_SYMBOLS_DDL = """\
-CREATE TABLE IF NOT EXISTS code_symbols (
-    id              VARCHAR PRIMARY KEY,
-    file_path       VARCHAR NOT NULL,
-    symbol_name     VARCHAR NOT NULL,
-    symbol_type     VARCHAR NOT NULL,
-    line_number     INTEGER,
-    signature       TEXT,
-    docstring       TEXT,
-    scope           VARCHAR DEFAULT '__global__',
-    parsed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE UNIQUE INDEX IF NOT EXISTS code_symbols_unique
-    ON code_symbols(file_path, symbol_name, symbol_type);
-"""
-
-CODE_DEPENDENCIES_DDL = """\
-CREATE TABLE IF NOT EXISTS code_dependencies (
-    id              VARCHAR PRIMARY KEY,
-    from_file       VARCHAR NOT NULL,
-    to_file         VARCHAR NOT NULL,
-    import_name     VARCHAR,
-    import_type     VARCHAR DEFAULT 'import',
-    scope           VARCHAR DEFAULT '__global__',
-    parsed_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE UNIQUE INDEX IF NOT EXISTS code_deps_unique
-    ON code_dependencies(from_file, to_file, import_name);
-"""
-
-SKIP_DIRS = {
-    "venv", ".venv", "node_modules", ".git", "__pycache__",
-    ".tox", "build", "dist", ".eggs",
-}
+from .config import GLOBAL_SCOPE, CODE_GRAPH_SKIP_DIRS, CODE_GRAPH_MAX_FILES
 
 
-# ── Table bootstrap ──────────────────────────────────────────────────────────
+# ── Data structures ──────────────────────────────────────────────────────────
 
-def ensure_code_graph_tables(conn: duckdb.DuckDBPyConnection) -> None:
-    """Create code_symbols and code_dependencies tables if they don't exist."""
-    for ddl in (CODE_SYMBOLS_DDL, CODE_DEPENDENCIES_DDL):
-        for stmt in ddl.strip().split(";"):
-            stmt = stmt.strip()
-            if stmt:
-                conn.execute(stmt)
+@dataclass
+class ParseResult:
+    symbols: list[dict] = field(default_factory=list)
+    imports: list[dict] = field(default_factory=list)
+
+
+@runtime_checkable
+class LanguageParser(Protocol):
+    extensions: set[str]
+    def parse_file(self, file_path: str) -> ParseResult | None: ...
+    def resolve_import(self, import_module: str, from_file: str, repo_root: str) -> str | None: ...
+
+
+# ── Parser registry ──────────────────────────────────────────────────────────
+
+_PARSERS: dict[str, LanguageParser] = {}
+
+
+def register_parser(parser: LanguageParser) -> None:
+    for ext in parser.extensions:
+        _PARSERS[ext] = parser
+
+
+def get_parser(file_path: str) -> LanguageParser | None:
+    ext = Path(file_path).suffix
+    return _PARSERS.get(ext)
+
+
+def get_registered_extensions() -> set[str]:
+    return set(_PARSERS.keys())
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,6 +102,21 @@ def _scope_filter(scope: Optional[str]) -> tuple[str, list]:
     if scope is None:
         return ("", [])
     return ("AND (scope = ? OR scope = ?)", [scope, GLOBAL_SCOPE])
+
+
+def ensure_code_graph_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    """No-op kept for backward compatibility — tables are created by migration 10."""
+    pass
+
+
+def _detect_language(file_path: str) -> str:
+    ext = Path(file_path).suffix.lower()
+    lang_map = {
+        ".py": "python", ".ts": "typescript", ".tsx": "typescript",
+        ".js": "javascript", ".jsx": "javascript",
+        ".go": "go", ".rs": "rust",
+    }
+    return lang_map.get(ext, "unknown")
 
 
 # ── Pure parsing (no DB required) ────────────────────────────────────────────
@@ -252,131 +255,201 @@ def resolve_import_path(
     return None
 
 
+# ── Python parser class ─────────────────────────────────────────────────────
+
+class PythonParser:
+    extensions = {".py"}
+
+    def parse_file(self, file_path: str) -> ParseResult | None:
+        result = parse_python_file(file_path)
+        if not result:
+            return None
+        return ParseResult(symbols=result["symbols"], imports=result["imports"])
+
+    def resolve_import(self, import_module: str, from_file: str, repo_root: str) -> str | None:
+        return resolve_import_path(import_module, from_file, repo_root)
+
+
+# Register built-in parsers
+register_parser(PythonParser())
+
+# Try to register tree-sitter parsers
+try:
+    from .parsers import register_all_parsers
+    register_all_parsers()
+except ImportError:
+    pass  # tree-sitter not installed
+
+
+# ── Single-file parsing (for PostToolUse hook) ───────────────────────────────
+
+def parse_single_file(
+    file_path: str,
+    repo_root: str,
+    conn: duckdb.DuckDBPyConnection,
+    scope: str,
+) -> dict:
+    """Parse a single file and update code graph. Returns stats."""
+    root = Path(repo_root)
+    full_path = Path(file_path)
+
+    try:
+        rel_path = str(full_path.relative_to(root))
+    except ValueError:
+        rel_path = str(full_path)
+
+    parser = get_parser(file_path)
+    if parser is None:
+        return {"parsed": False, "reason": "no parser for extension"}
+
+    result = parser.parse_file(str(full_path))
+    if result is None:
+        return {"parsed": False, "reason": "parse failed"}
+
+    language = _detect_language(file_path)
+    now = _now()
+
+    # Clear old data
+    conn.execute("DELETE FROM code_symbols WHERE file_path = ?", [rel_path])
+    conn.execute("DELETE FROM code_dependencies WHERE from_file = ?", [rel_path])
+
+    sym_count = 0
+    dep_count = 0
+
+    for sym in result.symbols:
+        sym_count += 1
+        conn.execute(
+            """INSERT INTO code_symbols
+               (id, file_path, symbol_name, symbol_type, language,
+                line_number, signature, docstring, scope, parsed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (file_path, symbol_name, symbol_type)
+               DO UPDATE SET line_number = excluded.line_number,
+                             signature  = excluded.signature,
+                             docstring  = excluded.docstring,
+                             language   = excluded.language,
+                             scope      = excluded.scope,
+                             parsed_at  = excluded.parsed_at
+            """,
+            [_uid(), rel_path, sym["name"], sym["type"], language,
+             sym.get("line"), sym.get("signature"), sym.get("docstring"),
+             scope, now],
+        )
+
+    for imp in result.imports:
+        resolved = parser.resolve_import(imp["module"], rel_path, repo_root)
+        if resolved is None:
+            continue
+        for name in imp.get("names", [imp.get("module", "")]):
+            dep_count += 1
+            conn.execute(
+                """INSERT INTO code_dependencies
+                   (id, from_file, to_file, import_name,
+                    import_type, language, scope, parsed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (from_file, to_file, import_name)
+                   DO UPDATE SET import_type = excluded.import_type,
+                                 language   = excluded.language,
+                                 scope      = excluded.scope,
+                                 parsed_at  = excluded.parsed_at
+                """,
+                [_uid(), rel_path, resolved, name,
+                 imp.get("type", "import"), language, scope, now],
+            )
+
+    # Update file index
+    try:
+        mtime = os.path.getmtime(full_path)
+    except OSError:
+        mtime = 0.0
+    conn.execute(
+        """INSERT INTO code_file_index (file_path, language, mtime, symbol_count, scope, parsed_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (file_path, scope)
+           DO UPDATE SET language = excluded.language, mtime = excluded.mtime,
+                         symbol_count = excluded.symbol_count, parsed_at = excluded.parsed_at
+        """,
+        [rel_path, language, mtime, sym_count, scope, now],
+    )
+
+    return {"parsed": True, "symbols": sym_count, "dependencies": dep_count}
+
+
 # ── Repo-wide parsing and storage ────────────────────────────────────────────
 
 def parse_repo(
     repo_root: str,
     conn: duckdb.DuckDBPyConnection,
     scope: str,
-    max_files: int = 1000,
+    max_files: int = 0,
 ) -> dict:
     """
-    Parse all .py files in a repo, storing symbols and dependencies in DuckDB.
+    Parse all supported source files in a repo, storing symbols and
+    dependencies in DuckDB.
 
     Skips files that haven't changed since last parse (mtime-based).
     Returns stats dict.
     """
-    ensure_code_graph_tables(conn)
+    if max_files <= 0:
+        max_files = CODE_GRAPH_MAX_FILES
 
     root = Path(repo_root)
     stats = {
-        "files_scanned": 0,
-        "files_parsed": 0,
-        "symbols_found": 0,
-        "dependencies_found": 0,
+        "files_scanned": 0, "files_parsed": 0,
+        "symbols_found": 0, "dependencies_found": 0,
         "skipped_unchanged": 0,
     }
 
-    py_files: list[Path] = []
+    registered_exts = get_registered_extensions()
+    if not registered_exts:
+        return stats
+
+    # Collect files
+    all_files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        # Prune skipped directories in-place
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in CODE_GRAPH_SKIP_DIRS]
         for fname in filenames:
-            if fname.endswith(".py"):
-                py_files.append(Path(dirpath) / fname)
-                if len(py_files) >= max_files:
+            if Path(fname).suffix in registered_exts:
+                all_files.append(Path(dirpath) / fname)
+                if len(all_files) >= max_files:
                     break
-        if len(py_files) >= max_files:
+        if len(all_files) >= max_files:
             break
+
+    # Load file index for mtime comparison
+    try:
+        index_rows = conn.execute(
+            "SELECT file_path, mtime FROM code_file_index WHERE scope = ? OR scope = ?",
+            [scope, GLOBAL_SCOPE],
+        ).fetchall()
+        file_index = {r[0]: r[1] for r in index_rows}
+    except Exception:
+        file_index = {}
 
     now = _now()
 
-    for full_path in py_files:
+    for full_path in all_files:
         stats["files_scanned"] += 1
         try:
             rel_path = str(full_path.relative_to(root))
         except ValueError:
             continue
 
-        # Check if file needs re-parsing
         try:
-            file_mtime_ts = os.path.getmtime(full_path)
+            file_mtime = os.path.getmtime(full_path)
         except OSError:
             continue
 
-        row = conn.execute(
-            "SELECT MAX(parsed_at) FROM code_symbols WHERE file_path = ?",
-            [rel_path],
-        ).fetchone()
-        last_parsed = row[0] if row and row[0] else None
-
-        if last_parsed is not None:
-            # Compare as naive local timestamps (DuckDB stores naive local)
-            file_mtime_local = datetime.fromtimestamp(file_mtime_ts)
-            if isinstance(last_parsed, datetime) and last_parsed.tzinfo is not None:
-                last_parsed = last_parsed.replace(tzinfo=None)
-            if file_mtime_local <= last_parsed:
-                stats["skipped_unchanged"] += 1
-                continue
-
-        # Parse the file
-        result = parse_python_file(str(full_path))
-        if not result:
+        # Check mtime
+        if rel_path in file_index and file_mtime <= file_index[rel_path]:
+            stats["skipped_unchanged"] += 1
             continue
-        stats["files_parsed"] += 1
 
-        # Clear old data for this file
-        conn.execute(
-            "DELETE FROM code_symbols WHERE file_path = ?", [rel_path]
-        )
-        conn.execute(
-            "DELETE FROM code_dependencies WHERE from_file = ?", [rel_path]
-        )
-
-        # Store symbols
-        for sym in result.get("symbols", []):
-            stats["symbols_found"] += 1
-            conn.execute(
-                """INSERT INTO code_symbols
-                   (id, file_path, symbol_name, symbol_type,
-                    line_number, signature, docstring, scope, parsed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT (file_path, symbol_name, symbol_type)
-                   DO UPDATE SET line_number = excluded.line_number,
-                                 signature  = excluded.signature,
-                                 docstring  = excluded.docstring,
-                                 scope      = excluded.scope,
-                                 parsed_at  = excluded.parsed_at
-                """,
-                [
-                    _uid(), rel_path, sym["name"], sym["type"],
-                    sym["line"], sym["signature"], sym.get("docstring"),
-                    scope, now,
-                ],
-            )
-
-        # Store dependencies
-        for imp in result.get("imports", []):
-            resolved = resolve_import_path(imp["module"], rel_path, repo_root)
-            if resolved is None:
-                continue  # external / unresolvable import
-            for name in imp["names"]:
-                stats["dependencies_found"] += 1
-                conn.execute(
-                    """INSERT INTO code_dependencies
-                       (id, from_file, to_file, import_name,
-                        import_type, scope, parsed_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)
-                       ON CONFLICT (from_file, to_file, import_name)
-                       DO UPDATE SET import_type = excluded.import_type,
-                                     scope      = excluded.scope,
-                                     parsed_at  = excluded.parsed_at
-                    """,
-                    [
-                        _uid(), rel_path, resolved, name,
-                        imp["type"], scope, now,
-                    ],
-                )
+        result = parse_single_file(str(full_path), repo_root, conn, scope)
+        if result.get("parsed"):
+            stats["files_parsed"] += 1
+            stats["symbols_found"] += result.get("symbols", 0)
+            stats["dependencies_found"] += result.get("dependencies", 0)
 
     return stats
 

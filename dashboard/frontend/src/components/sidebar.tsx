@@ -16,6 +16,7 @@ import {
   Search,
   LayoutDashboard,
   HelpCircle,
+  Code2,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/decisions", label: "Decisions", icon: Lightbulb },
   { href: "/entities", label: "Entities", icon: Users },
   { href: "/relationships", label: "Relationships", icon: GitBranch },
+  { href: "/code-graph", label: "Code Graph", icon: Code2 },
   { href: "/guardrails", label: "Guardrails", icon: ShieldAlert },
   { href: "/procedures", label: "Procedures", icon: ListChecks },
   { href: "/error-solutions", label: "Error Solutions", icon: Bug },

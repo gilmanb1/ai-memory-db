@@ -226,6 +226,169 @@ def retrieve_temporal(
         conn.close()
 
 
+def retrieve_code(
+    db_path: str,
+    query_text: str,
+    scope: Optional[str],
+    limit: int,
+) -> list[ScoredItem]:
+    """Code graph retrieval: find symbols and dependencies matching the query."""
+    from . import code_graph
+
+    conn = db.get_connection(read_only=True, db_path=db_path)
+    try:
+        items: list[ScoredItem] = []
+        seen: set[str] = set()
+
+        # Strategy 1: Symbol name search
+        # Extract potential symbol references from query
+        symbol_refs = _extract_symbol_refs(query_text)
+        for ref in symbol_refs:
+            results = code_graph.search_symbol(conn, ref, scope=scope)
+            for sym in results:
+                key = f"{sym['file_path']}:{sym['symbol_name']}"
+                if key not in seen:
+                    seen.add(key)
+                    items.append(ScoredItem(
+                        id=sym["id"], table="code_graph",
+                        text=f"{sym['file_path']}:{sym['line_number']} {sym['symbol_type']} {sym['symbol_name']}{sym.get('signature', '')}",
+                        score=1.0 if ref.lower() == sym["symbol_name"].lower() else 0.7,
+                        metadata={"file_path": sym["file_path"], "symbol_type": sym["symbol_type"],
+                                  "line_number": sym["line_number"], "signature": sym.get("signature", "")},
+                    ))
+
+        # Strategy 2: File path matching — pull symbols for matched files
+        file_paths = _extract_file_paths(query_text)
+        for fp in file_paths:
+            matched_files: list[tuple[str, list[dict]]] = []
+            syms = code_graph.get_file_symbols(conn, fp)
+            if syms:
+                matched_files.append((fp, syms))
+            else:
+                # Try partial match
+                rows = conn.execute(
+                    "SELECT DISTINCT file_path FROM code_symbols WHERE file_path LIKE ?",
+                    [f"%{fp}%"]
+                ).fetchall()
+                for row in rows:
+                    partial_syms = code_graph.get_file_symbols(conn, row[0])
+                    if partial_syms:
+                        matched_files.append((row[0], partial_syms))
+
+            for matched_path, matched_syms in matched_files:
+                key = f"file:{matched_path}"
+                if key not in seen:
+                    seen.add(key)
+                    sym_names = ", ".join(s["symbol_name"] for s in matched_syms[:10])
+                    items.append(ScoredItem(
+                        id=matched_path, table="code_graph",
+                        text=f"{matched_path} defines: {sym_names}",
+                        score=0.9 if matched_path == fp else 0.8,
+                        metadata={"file_path": matched_path, "symbol_count": len(matched_syms)},
+                    ))
+
+        items.sort(key=lambda x: x.score, reverse=True)
+        return items[:limit]
+    finally:
+        conn.close()
+
+
+_SYMBOL_RE = re.compile(r'\b([A-Z][a-zA-Z0-9]+|[a-z_][a-z0-9_]{2,})\b')
+
+def _extract_symbol_refs(text: str) -> list[str]:
+    """Extract potential symbol references (function/class names) from text."""
+    # Filter out common English words
+    stopwords = {"the", "and", "for", "are", "but", "not", "you", "all", "can",
+                 "her", "was", "one", "our", "out", "how", "does", "what", "this",
+                 "that", "with", "have", "from", "they", "been", "said", "each",
+                 "which", "their", "will", "other", "about", "many", "then", "them",
+                 "these", "some", "would", "make", "like", "into", "time", "very",
+                 "when", "come", "could", "now", "than", "first", "been", "its",
+                 "who", "way", "may", "down", "should", "called", "use", "show",
+                 "work", "right", "memory", "file", "code", "function", "class",
+                 "module", "import", "return", "value", "type", "name", "data",
+                 "list", "dict", "string", "number", "true", "false", "none"}
+    matches = _SYMBOL_RE.findall(text)
+    return [m for m in matches if m.lower() not in stopwords and len(m) >= 3]
+
+
+def retrieve_path(
+    db_path: str,
+    query_text: str,
+    scope: Optional[str],
+    limit: int,
+) -> list[ScoredItem]:
+    """File-path retrieval: find items whose file_paths overlap with paths in the query."""
+    paths = _extract_file_paths(query_text)
+    if not paths:
+        return []
+
+    conn = db.get_connection(read_only=True, db_path=db_path)
+    try:
+        scope_sql, scope_params = db._scope_filter(scope)
+        items: list[ScoredItem] = []
+        seen: set[str] = set()
+
+        # Tables that carry file_paths: facts, guardrails, procedures, error_solutions
+        tables = [
+            ("facts", "id, text, temporal_class, decay_score, file_paths"),
+            ("guardrails", "id, warning AS text, temporal_class, decay_score, file_paths"),
+            ("procedures", "id, task_description AS text, temporal_class, decay_score, file_paths"),
+            ("error_solutions", "id, error_pattern AS text, confidence, file_paths"),
+        ]
+
+        for table, cols in tables:
+            try:
+                rows = conn.execute(f"""
+                    SELECT {cols}
+                    FROM {table}
+                    WHERE is_active = TRUE AND file_paths IS NOT NULL
+                      AND len(file_paths) > 0
+                      {scope_sql}
+                    LIMIT 500
+                """, scope_params).fetchall()
+            except Exception:
+                continue
+
+            col_names = [c.strip().split(" AS ")[-1].split()[-1] for c in cols.split(",")]
+            for row in rows:
+                row_dict = dict(zip(col_names, row))
+                rid = row_dict["id"]
+                if rid in seen:
+                    continue
+                row_fps = row_dict.get("file_paths") or []
+                # Score by how many query paths match
+                matches = sum(1 for qp in paths if any(qp in fp or fp in qp for fp in row_fps))
+                if matches > 0:
+                    seen.add(rid)
+                    ds = row_dict.get("decay_score", 1.0) or 1.0
+                    items.append(ScoredItem(
+                        id=rid, table=table, text=row_dict["text"],
+                        score=matches * ds,
+                        metadata={"file_paths": row_fps, "path_matches": matches},
+                    ))
+
+        items.sort(key=lambda x: x.score, reverse=True)
+        return items[:limit]
+    finally:
+        conn.close()
+
+
+_FILE_PATH_RE = re.compile(
+    r'(?:^|[\s\'"])('
+    r'(?:[a-zA-Z]:)?'              # optional drive letter (Windows)
+    r'(?:\.{0,2}/)?'               # optional leading ./ ../ /
+    r'(?:[\w.@~-]+/)*'             # directory components
+    r'[\w.@~-]+\.[a-zA-Z0-9]{1,10}'  # filename with extension
+    r')'
+)
+
+
+def _extract_file_paths(text: str) -> list[str]:
+    """Extract plausible file paths from query text."""
+    return _FILE_PATH_RE.findall(text)
+
+
 # ── Reciprocal Rank Fusion ────────────────────────────────────────────────
 
 def reciprocal_rank_fusion(
@@ -276,12 +439,14 @@ def parallel_retrieve(
         "bm25": lambda: retrieve_bm25(db_path, query_text, scope, limit * 2),
         "graph": lambda: retrieve_graph(db_path, query_text, scope, limit * 2),
         "temporal": lambda: retrieve_temporal(db_path, query_text, scope, limit * 2),
+        "path": lambda: retrieve_path(db_path, query_text, scope, limit * 2),
+        "code": lambda: retrieve_code(db_path, query_text, scope, limit * 2),
     }
 
     results: dict[str, list[ScoredItem]] = {}
     timings: dict[str, float] = {}
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=len(active_strategies)) as pool:
         futures = {}
         for name in active_strategies:
             if name in strategy_fns:
@@ -313,7 +478,7 @@ def parallel_retrieve(
     # Timing trace (always, to stderr)
     total_results = sum(len(results.get(s, [])) for s in active_strategies)
     if total_results > 0:
-        strategy_names = ["semantic", "bm25", "graph", "temporal"]
+        strategy_names = ["semantic", "bm25", "graph", "temporal", "path", "code"]
         parts = []
         for s in strategy_names:
             if s in timings:

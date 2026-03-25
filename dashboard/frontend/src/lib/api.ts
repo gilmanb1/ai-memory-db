@@ -152,4 +152,21 @@ export const api = {
   // Search
   search: (data: { query: string; types?: string[]; scope?: string; limit?: number }) =>
     request<any>("/api/v1/search", { method: "POST", body: JSON.stringify(data) }),
+
+  // Code Graph
+  getCodeGraphStats: () => request<any>("/api/v1/code-graph/stats"),
+  getCodeGraphFiles: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request<any>(`/api/v1/code-graph/files${qs}`);
+  },
+  getCodeGraph: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request<any>(`/api/v1/code-graph/graph${qs}`);
+  },
+  getCodeFileSymbols: (filePath: string) =>
+    request<any>(`/api/v1/code-graph/files/${encodeURIComponent(filePath)}/symbols`),
+  getCodeFileImpact: (filePath: string) =>
+    request<any>(`/api/v1/code-graph/files/${encodeURIComponent(filePath)}/impact`),
+  searchCodeSymbols: (q: string) =>
+    request<any>(`/api/v1/code-graph/symbols/search?q=${encodeURIComponent(q)}`),
 };

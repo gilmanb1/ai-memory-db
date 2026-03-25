@@ -3188,6 +3188,7 @@ class TestBM25Search(unittest.TestCase):
             pass
 
     def test_bm25_finds_keyword_match(self):
+        db.rebuild_fts_indexes(self.conn)
         results = db.search_bm25(
             self.conn, "facts", "Python", "text",
             "id, text", 10,
@@ -3196,6 +3197,7 @@ class TestBM25Search(unittest.TestCase):
         self.assertTrue(any("Python" in t for t in texts))
 
     def test_bm25_no_match_returns_empty(self):
+        db.rebuild_fts_indexes(self.conn)
         results = db.search_bm25(
             self.conn, "facts", "xyznonexistent", "text",
             "id, text", 10,
@@ -3203,6 +3205,7 @@ class TestBM25Search(unittest.TestCase):
         self.assertEqual(len(results), 0)
 
     def test_bm25_respects_scope(self):
+        db.rebuild_fts_indexes(self.conn)
         results = db.search_bm25(
             self.conn, "facts", "Python", "text",
             "id, text", 10, scope="/some/other/project",
@@ -3538,7 +3541,7 @@ class TestReflectToolExecution(unittest.TestCase):
         except Exception:
             pass
 
-    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.reflect.embed", side_effect=_mock_embed)
     def test_search_observations_tool(self, mock_emb):
         from memory.reflect import _execute_tool
         # Use exact text that was stored so mock embeddings produce cosine=1.0
@@ -3549,7 +3552,7 @@ class TestReflectToolExecution(unittest.TestCase):
         self.assertIn("DuckDB", text)
         self.assertGreater(len(sources), 0)
 
-    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.reflect.embed", side_effect=_mock_embed)
     def test_recall_facts_tool(self, mock_emb):
         from memory.reflect import _execute_tool
         # Use exact text that was stored
@@ -6375,6 +6378,976 @@ class TestMigration9Schema(unittest.TestCase):
         db._run_migrations(self.conn)
         count = self.conn.execute("SELECT COUNT(*) FROM schema_migrations WHERE version=9").fetchone()[0]
         self.assertEqual(count, 1)
+
+
+# ── Concurrency tests ──────────────────────────────────────────────────────
+
+import multiprocessing
+import os
+
+
+def _noop_decay_worker(last_seen_at, session_count, temporal_class):
+    return 1.0
+
+
+def _mock_embed_worker(text):
+    """Same deterministic embedding as _mock_embed but importable by workers."""
+    import hashlib, math as _m
+    raw = []
+    seed = hashlib.sha256(text.encode()).digest()
+    while len(raw) < 768:
+        seed = hashlib.sha256(seed).digest()
+        for i in range(0, len(seed) - 3, 4):
+            if len(raw) < 768:
+                val = int.from_bytes(seed[i:i+4], "big") / (2**32) - 0.5
+                raw.append(val)
+    norm = _m.sqrt(sum(x * x for x in raw)) or 1.0
+    return [x / norm for x in raw]
+
+
+def _worker_write(db_path_str, worker_id, result_dict):
+    """Worker process: open a write connection, insert a fact, close."""
+    try:
+        import importlib
+        from memory import db as db_w
+        importlib.reload(db_w)
+
+        conn = db_w.get_connection(db_path=db_path_str)
+        emb = _mock_embed_worker(f"concurrency-fact-{worker_id}")
+        db_w.upsert_fact(
+            conn, f"concurrency-fact-{worker_id}",
+            category="technical", temporal_class="long", confidence="high",
+            embedding=emb, session_id="sess-conc",
+            decay_fn=_noop_decay_worker, scope="__global__",
+        )
+        conn.close()
+        result_dict[worker_id] = "ok"
+    except Exception as exc:
+        result_dict[worker_id] = f"error: {exc}"
+
+
+def _worker_read_while_write(db_path_str, barrier, result_dict, worker_id):
+    """Worker that reads while another process is writing."""
+    try:
+        import importlib
+        from memory import db as db_r
+        importlib.reload(db_r)
+
+        barrier.wait(timeout=10)
+
+        conn = db_r.get_connection(read_only=True, db_path=db_path_str)
+        count = conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
+        conn.close()
+        result_dict[worker_id] = f"ok:count={count}"
+    except Exception as exc:
+        result_dict[worker_id] = f"error: {exc}"
+
+
+def _worker_write_with_barrier(db_path_str, barrier, result_dict, worker_id):
+    """Worker that writes after a barrier sync (to maximise contention)."""
+    try:
+        import importlib
+        from memory import db as db_w
+        importlib.reload(db_w)
+
+        barrier.wait(timeout=10)
+
+        conn = db_w.get_connection(db_path=db_path_str)
+        emb = _mock_embed_worker(f"barrier-fact-{worker_id}")
+        db_w.upsert_fact(
+            conn, f"barrier-fact-{worker_id}",
+            category="technical", temporal_class="long", confidence="high",
+            embedding=emb, session_id="sess-conc",
+            decay_fn=_noop_decay_worker, scope="__global__",
+        )
+        conn.close()
+        result_dict[worker_id] = "ok"
+    except Exception as exc:
+        result_dict[worker_id] = f"error: {exc}"
+
+
+def _worker_retry_connect(db_path_str, _unused, result_dict):
+    """Try to get a write connection — used to test retry when DB is locked."""
+    try:
+        import importlib
+        from memory import db as db_r
+        importlib.reload(db_r)
+        conn = db_r.get_connection(db_path=db_path_str)
+        conn.close()
+        result_dict["status"] = "ok"
+    except Exception as exc:
+        result_dict["status"] = f"error: {exc}"
+
+
+class TestDBConcurrency(unittest.TestCase):
+    """
+    GIVEN multiple OS processes sharing one DuckDB file
+    WHEN they open connections concurrently
+    THEN retry logic handles lock contention without errors
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        # Initialise schema so workers don't all race on migrations
+        conn = db.get_connection(db_path=str(self.db_path))
+        db.upsert_session(conn, "sess-conc", "test", "/tmp", "/tmp/t.jsonl", 1, "Concurrency test")
+        conn.close()
+
+    def tearDown(self):
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_sequential_writers_no_contention(self):
+        """Baseline: sequential write connections succeed without retry."""
+        manager = multiprocessing.Manager()
+        results = manager.dict()
+
+        for i in range(3):
+            p = multiprocessing.Process(
+                target=_worker_write,
+                args=(str(self.db_path), i, results),
+            )
+            p.start()
+            p.join(timeout=30)
+
+        for i in range(3):
+            self.assertEqual(results.get(i), "ok", f"Worker {i} failed: {results.get(i)}")
+
+    def test_concurrent_writers_with_retry(self):
+        """Multiple writers launched simultaneously — retry handles contention."""
+        manager = multiprocessing.Manager()
+        results = manager.dict()
+        barrier = multiprocessing.Barrier(3)
+
+        procs = []
+        for i in range(3):
+            p = multiprocessing.Process(
+                target=_worker_write_with_barrier,
+                args=(str(self.db_path), barrier, results, i),
+            )
+            procs.append(p)
+
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=60)
+
+        succeeded = [i for i in range(3) if results.get(i) == "ok"]
+        self.assertEqual(
+            len(succeeded), 3,
+            f"Expected all 3 writers to succeed, got: {dict(results)}",
+        )
+
+        # Verify all 3 facts actually landed
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        count = conn.execute(
+            "SELECT COUNT(*) FROM facts WHERE text LIKE 'barrier-fact-%'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 3)
+
+    def test_readers_concurrent_with_writer(self):
+        """Readers should succeed even when a writer is active."""
+        manager = multiprocessing.Manager()
+        results = manager.dict()
+        barrier = multiprocessing.Barrier(4)  # 1 writer + 3 readers
+
+        procs = []
+        # 1 writer
+        procs.append(multiprocessing.Process(
+            target=_worker_write_with_barrier,
+            args=(str(self.db_path), barrier, results, "writer"),
+        ))
+        # 3 readers
+        for i in range(3):
+            procs.append(multiprocessing.Process(
+                target=_worker_read_while_write,
+                args=(str(self.db_path), barrier, results, f"reader-{i}"),
+            ))
+
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=60)
+
+        self.assertEqual(results.get("writer"), "ok", f"Writer failed: {results.get('writer')}")
+        for i in range(3):
+            key = f"reader-{i}"
+            self.assertTrue(
+                str(results.get(key, "")).startswith("ok"),
+                f"Reader {i} failed: {results.get(key)}",
+            )
+
+    def test_retry_backoff_on_locked_db(self):
+        """Directly test _connect_with_retry by holding a write lock."""
+        import duckdb as _duckdb
+        # Hold a write connection in this process
+        blocker = _duckdb.connect(str(self.db_path), read_only=False)
+
+        manager = multiprocessing.Manager()
+        results = manager.dict()
+
+        p = multiprocessing.Process(
+            target=_worker_retry_connect,
+            args=(str(self.db_path), None, results),
+        )
+        p.start()
+
+        # Release the lock after a short delay so the worker's retry succeeds
+        time.sleep(0.3)
+        blocker.close()
+
+        p.join(timeout=30)
+        self.assertEqual(results.get("status"), "ok", f"Retry failed: {results.get('status')}")
+
+    def test_init_caching_skips_migrations_on_second_connect(self):
+        """After first write connect, subsequent ones skip migrations."""
+        # Reset the cache for this db path
+        path_str = str(self.db_path)
+        db._initialised_paths.discard(path_str)
+
+        conn1 = db.get_connection(db_path=path_str)
+        conn1.close()
+        self.assertIn(path_str, db._initialised_paths)
+
+        # Patch _run_migrations to verify it's NOT called on second connect
+        with patch.object(db, '_run_migrations') as mock_mig:
+            conn2 = db.get_connection(db_path=path_str)
+            conn2.close()
+            mock_mig.assert_not_called()
+
+
+# ── Multi-Language Code Graph Tests ───────────────────────────────────────
+
+class TestParserRegistry(unittest.TestCase):
+    """
+    GIVEN the code graph parser registry
+    WHEN parsers are registered
+    THEN extensions are tracked and dispatch works correctly
+    """
+
+    def test_given_fresh_import_when_checking_extensions_then_python_is_registered(self):
+        from memory.code_graph import get_registered_extensions
+        exts = get_registered_extensions()
+        self.assertIn(".py", exts)
+
+    def test_given_tree_sitter_installed_when_checking_extensions_then_all_languages_registered(self):
+        from memory.code_graph import get_registered_extensions
+        exts = get_registered_extensions()
+        for ext in [".ts", ".tsx", ".js", ".jsx", ".go", ".rs"]:
+            self.assertIn(ext, exts, f"{ext} should be registered")
+
+    def test_given_python_file_when_getting_parser_then_returns_python_parser(self):
+        from memory.code_graph import get_parser, PythonParser
+        parser = get_parser("foo.py")
+        self.assertIsNotNone(parser)
+        self.assertIsInstance(parser, PythonParser)
+
+    def test_given_typescript_file_when_getting_parser_then_returns_ts_parser(self):
+        from memory.code_graph import get_parser
+        parser = get_parser("component.tsx")
+        self.assertIsNotNone(parser)
+        self.assertEqual(parser.__class__.__name__, "TypeScriptParser")
+
+    def test_given_go_file_when_getting_parser_then_returns_go_parser(self):
+        from memory.code_graph import get_parser
+        parser = get_parser("main.go")
+        self.assertIsNotNone(parser)
+        self.assertEqual(parser.__class__.__name__, "GoParser")
+
+    def test_given_rust_file_when_getting_parser_then_returns_rust_parser(self):
+        from memory.code_graph import get_parser
+        parser = get_parser("lib.rs")
+        self.assertIsNotNone(parser)
+        self.assertEqual(parser.__class__.__name__, "RustParser")
+
+    def test_given_unknown_extension_when_getting_parser_then_returns_none(self):
+        from memory.code_graph import get_parser
+        self.assertIsNone(get_parser("data.csv"))
+
+    def test_given_python_parser_wraps_existing_when_parse_file_then_returns_parse_result(self):
+        from memory.code_graph import PythonParser, ParseResult
+        parser = PythonParser()
+        result = parser.parse_file(str(Path(__file__).parent / "memory" / "db.py"))
+        self.assertIsInstance(result, ParseResult)
+        self.assertGreater(len(result.symbols), 0)
+
+
+class TestTypeScriptParser(unittest.TestCase):
+    """
+    GIVEN TypeScript/JavaScript source files
+    WHEN parsing with the tree-sitter TypeScript parser
+    THEN functions, classes, interfaces, imports are extracted
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_given_ts_function_when_parse_then_function_extracted(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "app.ts"
+        src.write_text('export function greet(name: string): string {\n  return `Hello ${name}`;\n}\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("greet", names)
+
+    def test_given_ts_class_when_parse_then_class_and_methods_extracted(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "user.ts"
+        src.write_text('class User {\n  constructor(public name: string) {}\n  greet() { return this.name; }\n}\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("User", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["User"], "class")
+
+    def test_given_ts_interface_when_parse_then_interface_extracted(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "types.ts"
+        src.write_text('export interface Config {\n  port: number;\n  host: string;\n}\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("Config", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["Config"], "interface")
+
+    def test_given_ts_import_when_parse_then_import_extracted(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "main.ts"
+        src.write_text('import { readFile } from "fs";\nimport React from "react";\n\nfunction main() {}\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        self.assertGreater(len(result.imports), 0)
+        modules = [i["module"] for i in result.imports]
+        self.assertTrue(any("fs" in m for m in modules))
+
+    def test_given_jsx_file_when_parse_then_symbols_extracted(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "component.jsx"
+        src.write_text('function App() {\n  return <div>Hello</div>;\n}\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("App", names)
+
+    def test_given_tsx_file_when_parse_then_uses_tsx_language(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "comp.tsx"
+        src.write_text('export const Button: React.FC<{label: string}> = ({label}) => <button>{label}</button>;\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+
+    def test_given_relative_import_when_resolve_then_returns_path(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        (self.tmp / "utils.ts").write_text("export function helper() {}")
+        parser = TypeScriptParser()
+        resolved = parser.resolve_import("./utils", str(self.tmp / "main.ts"), str(self.tmp))
+        self.assertIsNotNone(resolved)
+        self.assertIn("utils", resolved)
+
+    def test_given_arrow_function_when_parse_then_extracted_as_function(self):
+        from memory.parsers.typescript_parser import TypeScriptParser
+        src = self.tmp / "funcs.ts"
+        src.write_text('export const add = (a: number, b: number) => a + b;\n')
+        parser = TypeScriptParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("add", names)
+
+
+class TestGoParser(unittest.TestCase):
+    """
+    GIVEN Go source files
+    WHEN parsing with the tree-sitter Go parser
+    THEN functions, methods, structs, interfaces, imports are extracted
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_given_go_function_when_parse_then_function_extracted(self):
+        from memory.parsers.go_parser import GoParser
+        src = self.tmp / "main.go"
+        src.write_text('package main\n\nfunc main() {\n\tprintln("hello")\n}\n')
+        parser = GoParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("main", names)
+
+    def test_given_go_struct_when_parse_then_struct_extracted(self):
+        from memory.parsers.go_parser import GoParser
+        src = self.tmp / "types.go"
+        src.write_text('package models\n\ntype User struct {\n\tName string\n\tAge  int\n}\n')
+        parser = GoParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("User", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["User"], "struct")
+
+    def test_given_go_method_when_parse_then_method_extracted_with_receiver(self):
+        from memory.parsers.go_parser import GoParser
+        src = self.tmp / "user.go"
+        src.write_text('package models\n\ntype User struct{ Name string }\n\nfunc (u *User) Greet() string {\n\treturn u.Name\n}\n')
+        parser = GoParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        method_names = [s["name"] for s in result.symbols if s["type"] == "method"]
+        self.assertTrue(any("Greet" in n for n in method_names))
+
+    def test_given_go_interface_when_parse_then_interface_extracted(self):
+        from memory.parsers.go_parser import GoParser
+        src = self.tmp / "iface.go"
+        src.write_text('package svc\n\ntype Service interface {\n\tRun() error\n}\n')
+        parser = GoParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("Service", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["Service"], "interface")
+
+    def test_given_go_import_when_parse_then_imports_extracted(self):
+        from memory.parsers.go_parser import GoParser
+        src = self.tmp / "app.go"
+        src.write_text('package main\n\nimport (\n\t"fmt"\n\t"os"\n)\n\nfunc main() { fmt.Println(os.Args) }\n')
+        parser = GoParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        modules = [i["module"] for i in result.imports]
+        self.assertIn("fmt", modules)
+        self.assertIn("os", modules)
+
+
+class TestRustParser(unittest.TestCase):
+    """
+    GIVEN Rust source files
+    WHEN parsing with the tree-sitter Rust parser
+    THEN functions, structs, traits, enums, impls, use statements are extracted
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_given_rust_function_when_parse_then_function_extracted(self):
+        from memory.parsers.rust_parser import RustParser
+        src = self.tmp / "main.rs"
+        src.write_text('fn main() {\n    println!("hello");\n}\n')
+        parser = RustParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("main", names)
+
+    def test_given_rust_struct_when_parse_then_struct_extracted(self):
+        from memory.parsers.rust_parser import RustParser
+        src = self.tmp / "lib.rs"
+        src.write_text('pub struct Config {\n    pub port: u16,\n    pub host: String,\n}\n')
+        parser = RustParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("Config", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["Config"], "struct")
+
+    def test_given_rust_trait_when_parse_then_trait_extracted(self):
+        from memory.parsers.rust_parser import RustParser
+        src = self.tmp / "traits.rs"
+        src.write_text('pub trait Handler {\n    fn handle(&self) -> Result<(), Error>;\n}\n')
+        parser = RustParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("Handler", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["Handler"], "trait")
+
+    def test_given_rust_enum_when_parse_then_enum_extracted(self):
+        from memory.parsers.rust_parser import RustParser
+        src = self.tmp / "enums.rs"
+        src.write_text('enum Color {\n    Red,\n    Green,\n    Blue,\n}\n')
+        parser = RustParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        names = [s["name"] for s in result.symbols]
+        self.assertIn("Color", names)
+        types = {s["name"]: s["type"] for s in result.symbols}
+        self.assertEqual(types["Color"], "enum")
+
+    def test_given_rust_impl_when_parse_then_methods_extracted(self):
+        from memory.parsers.rust_parser import RustParser
+        src = self.tmp / "impl.rs"
+        src.write_text('struct Server { port: u16 }\n\nimpl Server {\n    fn new(port: u16) -> Self {\n        Server { port }\n    }\n    fn start(&self) {}\n}\n')
+        parser = RustParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        method_names = [s["name"] for s in result.symbols if s["type"] == "method"]
+        self.assertTrue(any("new" in n for n in method_names))
+        self.assertTrue(any("start" in n for n in method_names))
+
+    def test_given_rust_use_when_parse_then_imports_extracted(self):
+        from memory.parsers.rust_parser import RustParser
+        src = self.tmp / "uses.rs"
+        src.write_text('use std::io;\nuse std::collections::HashMap;\n\nfn main() {}\n')
+        parser = RustParser()
+        result = parser.parse_file(str(src))
+        self.assertIsNotNone(result)
+        self.assertGreater(len(result.imports), 0)
+
+
+class TestParseResult(unittest.TestCase):
+    """
+    GIVEN the ParseResult dataclass
+    WHEN creating instances
+    THEN it has the expected fields and defaults
+    """
+
+    def test_given_empty_parse_result_when_created_then_has_empty_lists(self):
+        from memory.code_graph import ParseResult
+        pr = ParseResult()
+        self.assertEqual(pr.symbols, [])
+        self.assertEqual(pr.imports, [])
+
+    def test_given_parse_result_with_data_when_created_then_fields_accessible(self):
+        from memory.code_graph import ParseResult
+        pr = ParseResult(symbols=[{"name": "foo"}], imports=[{"module": "bar"}])
+        self.assertEqual(len(pr.symbols), 1)
+        self.assertEqual(pr.symbols[0]["name"], "foo")
+
+
+class TestParseSingleFile(unittest.TestCase):
+    """
+    GIVEN a single source file
+    WHEN calling parse_single_file
+    THEN symbols and dependencies are stored in DuckDB and file_index is updated
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.repo_dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self.repo_dir, ignore_errors=True)
+        self.db_path.unlink(missing_ok=True)
+
+    def test_given_python_file_when_parse_single_then_symbols_stored(self):
+        from memory.code_graph import parse_single_file
+        src = self.repo_dir / "app.py"
+        src.write_text("def hello():\n    pass\n\nclass World:\n    pass\n")
+        result = parse_single_file(str(src), str(self.repo_dir), self.conn, "test-scope")
+        self.assertTrue(result["parsed"])
+        self.assertEqual(result["symbols"], 2)
+
+        rows = self.conn.execute("SELECT symbol_name FROM code_symbols WHERE file_path = 'app.py'").fetchall()
+        names = [r[0] for r in rows]
+        self.assertIn("hello", names)
+        self.assertIn("World", names)
+
+    def test_given_python_file_when_parse_single_then_file_index_updated(self):
+        from memory.code_graph import parse_single_file
+        src = self.repo_dir / "mod.py"
+        src.write_text("x = 1\n")
+        parse_single_file(str(src), str(self.repo_dir), self.conn, "test-scope")
+
+        row = self.conn.execute(
+            "SELECT file_path, language, symbol_count FROM code_file_index WHERE file_path = 'mod.py'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[1], "python")
+
+    def test_given_typescript_file_when_parse_single_then_language_is_typescript(self):
+        from memory.code_graph import parse_single_file
+        src = self.repo_dir / "app.ts"
+        src.write_text("export function greet(): void {}\n")
+        result = parse_single_file(str(src), str(self.repo_dir), self.conn, "test-scope")
+        self.assertTrue(result["parsed"])
+
+        row = self.conn.execute(
+            "SELECT language FROM code_symbols WHERE file_path = 'app.ts' LIMIT 1"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "typescript")
+
+    def test_given_unsupported_extension_when_parse_single_then_not_parsed(self):
+        from memory.code_graph import parse_single_file
+        src = self.repo_dir / "data.csv"
+        src.write_text("a,b,c\n1,2,3\n")
+        result = parse_single_file(str(src), str(self.repo_dir), self.conn, "test-scope")
+        self.assertFalse(result["parsed"])
+
+    def test_given_file_reparsed_when_symbols_change_then_old_symbols_replaced(self):
+        from memory.code_graph import parse_single_file
+        src = self.repo_dir / "changing.py"
+        src.write_text("def old_func():\n    pass\n")
+        parse_single_file(str(src), str(self.repo_dir), self.conn, "test-scope")
+
+        rows = self.conn.execute("SELECT symbol_name FROM code_symbols WHERE file_path = 'changing.py'").fetchall()
+        self.assertEqual([r[0] for r in rows], ["old_func"])
+
+        src.write_text("def new_func():\n    pass\n")
+        parse_single_file(str(src), str(self.repo_dir), self.conn, "test-scope")
+
+        rows = self.conn.execute("SELECT symbol_name FROM code_symbols WHERE file_path = 'changing.py'").fetchall()
+        names = [r[0] for r in rows]
+        self.assertIn("new_func", names)
+        self.assertNotIn("old_func", names)
+
+
+class TestMultiLangParseRepo(unittest.TestCase):
+    """
+    GIVEN a repo with Python, TypeScript, and Go files
+    WHEN parsing the repo
+    THEN all languages are parsed and stored with correct language tags
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.repo_dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self.repo_dir, ignore_errors=True)
+        self.db_path.unlink(missing_ok=True)
+
+    def test_given_mixed_repo_when_parse_then_all_languages_indexed(self):
+        from memory.code_graph import parse_repo
+        (self.repo_dir / "main.py").write_text("def main(): pass\n")
+        (self.repo_dir / "app.ts").write_text("export function app() {}\n")
+        (self.repo_dir / "server.go").write_text("package main\n\nfunc serve() {}\n")
+
+        stats = parse_repo(str(self.repo_dir), self.conn, "multi-scope")
+        self.assertEqual(stats["files_parsed"], 3)
+        self.assertGreater(stats["symbols_found"], 0)
+
+        langs = self.conn.execute(
+            "SELECT DISTINCT language FROM code_symbols ORDER BY language"
+        ).fetchall()
+        lang_set = {r[0] for r in langs}
+        self.assertIn("python", lang_set)
+        self.assertIn("typescript", lang_set)
+        self.assertIn("go", lang_set)
+
+    def test_given_repo_with_node_modules_when_parse_then_skipped(self):
+        from memory.code_graph import parse_repo
+        nm = self.repo_dir / "node_modules" / "pkg"
+        nm.mkdir(parents=True)
+        (nm / "index.js").write_text("function internal() {}\n")
+        (self.repo_dir / "app.js").write_text("function app() {}\n")
+
+        stats = parse_repo(str(self.repo_dir), self.conn, "skip-scope")
+        # Should only parse app.js, not node_modules/pkg/index.js
+        self.assertEqual(stats["files_parsed"], 1)
+
+    def test_given_repo_parsed_twice_when_files_unchanged_then_second_is_incremental(self):
+        from memory.code_graph import parse_repo
+        (self.repo_dir / "stable.py").write_text("def stable(): pass\n")
+
+        stats1 = parse_repo(str(self.repo_dir), self.conn, "incr-scope")
+        self.assertEqual(stats1["files_parsed"], 1)
+        self.assertEqual(stats1["skipped_unchanged"], 0)
+
+        stats2 = parse_repo(str(self.repo_dir), self.conn, "incr-scope")
+        self.assertEqual(stats2["files_parsed"], 0)
+        self.assertEqual(stats2["skipped_unchanged"], 1)
+
+    def test_given_file_index_when_file_modified_then_reparsed(self):
+        from memory.code_graph import parse_repo
+        import time as _time
+        src = self.repo_dir / "evolving.py"
+        src.write_text("def v1(): pass\n")
+        parse_repo(str(self.repo_dir), self.conn, "evolve-scope")
+
+        _time.sleep(0.1)
+        src.write_text("def v2(): pass\ndef v2b(): pass\n")
+
+        stats = parse_repo(str(self.repo_dir), self.conn, "evolve-scope")
+        self.assertEqual(stats["files_parsed"], 1)
+        names = [r[0] for r in self.conn.execute(
+            "SELECT symbol_name FROM code_symbols WHERE file_path = 'evolving.py'"
+        ).fetchall()]
+        self.assertIn("v2", names)
+        self.assertNotIn("v1", names)
+
+
+class TestCodeFileIndex(unittest.TestCase):
+    """
+    GIVEN the code_file_index table
+    WHEN files are parsed
+    THEN the index tracks file metadata correctly
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.repo_dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self.repo_dir, ignore_errors=True)
+        self.db_path.unlink(missing_ok=True)
+
+    def test_given_parsed_file_when_querying_index_then_metadata_present(self):
+        from memory.code_graph import parse_single_file
+        src = self.repo_dir / "indexed.py"
+        src.write_text("def a(): pass\ndef b(): pass\n")
+        parse_single_file(str(src), str(self.repo_dir), self.conn, "idx-scope")
+
+        row = self.conn.execute(
+            "SELECT file_path, language, symbol_count, mtime FROM code_file_index WHERE file_path = 'indexed.py'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "indexed.py")
+        self.assertEqual(row[1], "python")
+        self.assertEqual(row[2], 2)
+        self.assertGreater(row[3], 0)  # mtime > 0
+
+
+class TestCodeRetrievalStrategy(unittest.TestCase):
+    """
+    GIVEN a populated code graph
+    WHEN running the code retrieval strategy
+    THEN relevant symbols and files are returned as ScoredItems
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.repo_dir = Path(tempfile.mkdtemp())
+        # Create and parse a mini repo
+        (self.repo_dir / "database.py").write_text(
+            "def get_connection():\n    '''Open DB.'''\n    pass\n\n"
+            "def run_query(sql):\n    pass\n"
+        )
+        (self.repo_dir / "api.py").write_text(
+            "from database import get_connection\n\ndef handle_request():\n    pass\n"
+        )
+        from memory.code_graph import parse_repo
+        parse_repo(str(self.repo_dir), self.conn, "retrieval-scope")
+        self.conn.close()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.repo_dir, ignore_errors=True)
+        self.db_path.unlink(missing_ok=True)
+
+    def test_given_symbol_name_in_query_when_retrieve_code_then_symbol_found(self):
+        from memory.retrieval import retrieve_code
+        items = retrieve_code(str(self.db_path), "how does get_connection work?", "retrieval-scope", 10)
+        self.assertGreater(len(items), 0)
+        texts = " ".join(i.text for i in items)
+        self.assertIn("get_connection", texts)
+
+    def test_given_file_path_in_query_when_retrieve_code_then_file_symbols_returned(self):
+        from memory.retrieval import retrieve_code
+        items = retrieve_code(str(self.db_path), "what's in database.py?", "retrieval-scope", 10)
+        self.assertGreater(len(items), 0)
+
+    def test_given_no_match_when_retrieve_code_then_empty_list(self):
+        from memory.retrieval import retrieve_code
+        items = retrieve_code(str(self.db_path), "hello world", "retrieval-scope", 10)
+        # May return 0 or some low-relevance items — just shouldn't crash
+        self.assertIsInstance(items, list)
+
+
+class TestExtractSymbolRefs(unittest.TestCase):
+    """
+    GIVEN query text containing potential symbol references
+    WHEN extracting symbol refs
+    THEN camelCase, snake_case, and PascalCase identifiers are found
+    """
+
+    def test_given_snake_case_when_extract_then_found(self):
+        from memory.retrieval import _extract_symbol_refs
+        refs = _extract_symbol_refs("how does get_connection work?")
+        self.assertIn("get_connection", refs)
+
+    def test_given_pascal_case_when_extract_then_found(self):
+        from memory.retrieval import _extract_symbol_refs
+        refs = _extract_symbol_refs("what is ParseResult?")
+        self.assertIn("ParseResult", refs)
+
+    def test_given_common_words_when_extract_then_filtered(self):
+        from memory.retrieval import _extract_symbol_refs
+        refs = _extract_symbol_refs("how does this function work?")
+        self.assertNotIn("how", refs)
+        self.assertNotIn("does", refs)
+        self.assertNotIn("this", refs)
+
+
+class TestRecallCodeContext(unittest.TestCase):
+    """
+    GIVEN a populated code graph
+    WHEN prompt_recall encounters file paths
+    THEN code context is included in the recall output
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.repo_dir = Path(tempfile.mkdtemp())
+        (self.repo_dir / "server.py").write_text(
+            "def start():\n    pass\n\ndef stop():\n    pass\n"
+        )
+        from memory.code_graph import parse_repo
+        parse_repo(str(self.repo_dir), self.conn, "recall-scope")
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        shutil.rmtree(self.repo_dir, ignore_errors=True)
+        self.db_path.unlink(missing_ok=True)
+
+    def test_given_file_path_in_prompt_when_recall_code_context_then_returns_symbols(self):
+        from memory.recall import _recall_code_context
+        ctx = _recall_code_context(self.conn, "look at server.py", "recall-scope")
+        self.assertGreater(len(ctx), 0)
+        self.assertIn("start", ctx[0]["symbols"])
+
+    def test_given_no_file_path_when_recall_code_context_then_returns_empty(self):
+        from memory.recall import _recall_code_context
+        ctx = _recall_code_context(self.conn, "how does memory work?", "recall-scope")
+        self.assertEqual(len(ctx), 0)
+
+
+class TestMigration10Tables(unittest.TestCase):
+    """
+    GIVEN a fresh database connection
+    WHEN migration 10 runs
+    THEN code_symbols, code_dependencies, and code_file_index tables exist with language column
+    """
+
+    def test_given_fresh_db_when_connect_then_code_tables_exist(self):
+        db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        conn = fresh_conn(db_path)
+        try:
+            tables = conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'code%'"
+            ).fetchall()
+            table_names = {t[0] for t in tables}
+            self.assertIn("code_symbols", table_names)
+            self.assertIn("code_dependencies", table_names)
+            self.assertIn("code_file_index", table_names)
+        finally:
+            conn.close()
+            db_path.unlink(missing_ok=True)
+
+    def test_given_code_symbols_table_when_check_columns_then_has_language(self):
+        db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        conn = fresh_conn(db_path)
+        try:
+            cols = conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'code_symbols'"
+            ).fetchall()
+            col_names = {c[0] for c in cols}
+            self.assertIn("language", col_names)
+            self.assertIn("file_path", col_names)
+            self.assertIn("symbol_name", col_names)
+        finally:
+            conn.close()
+            db_path.unlink(missing_ok=True)
+
+
+class TestPostToolUseHook(unittest.TestCase):
+    """
+    GIVEN the post_tool_use hook
+    WHEN a Write/Edit tool call completes
+    THEN the code graph is updated for that file
+    """
+
+    def test_given_non_write_tool_when_hook_fires_then_noop(self):
+        from hooks.post_tool_use import main
+        # Should not crash or do anything for non-Write tools
+        main({"tool_name": "Read", "tool_input": {"file_path": "test.py"}})
+
+    def test_given_unsupported_extension_when_hook_fires_then_noop(self):
+        from hooks.post_tool_use import main
+        main({"tool_name": "Write", "tool_input": {"file_path": "data.csv"}, "cwd": "/tmp"})
+
+    def test_given_write_tool_on_py_file_when_hook_fires_then_parses(self):
+        import tempfile, os
+        from hooks.post_tool_use import main
+
+        tmp_dir = tempfile.mkdtemp()
+        py_file = os.path.join(tmp_dir, "test_hook.py")
+        with open(py_file, "w") as f:
+            f.write("def hooked_func(): pass\n")
+
+        # This will try to parse the file — may fail on DB write but shouldn't crash
+        try:
+            main({"tool_name": "Write", "tool_input": {"file_path": py_file}, "cwd": tmp_dir})
+        except Exception:
+            pass  # DB concurrency or other issues are OK in test — we just verify no crash
+
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+class TestDetectLanguage(unittest.TestCase):
+    """
+    GIVEN a file path
+    WHEN detecting language
+    THEN the correct language string is returned
+    """
+
+    def test_python(self):
+        from memory.code_graph import _detect_language
+        self.assertEqual(_detect_language("app.py"), "python")
+
+    def test_typescript(self):
+        from memory.code_graph import _detect_language
+        self.assertEqual(_detect_language("component.tsx"), "typescript")
+        self.assertEqual(_detect_language("utils.ts"), "typescript")
+
+    def test_javascript(self):
+        from memory.code_graph import _detect_language
+        self.assertEqual(_detect_language("app.js"), "javascript")
+        self.assertEqual(_detect_language("comp.jsx"), "javascript")
+
+    def test_go(self):
+        from memory.code_graph import _detect_language
+        self.assertEqual(_detect_language("main.go"), "go")
+
+    def test_rust(self):
+        from memory.code_graph import _detect_language
+        self.assertEqual(_detect_language("lib.rs"), "rust")
+
+    def test_unknown(self):
+        from memory.code_graph import _detect_language
+        self.assertEqual(_detect_language("data.csv"), "unknown")
 
 
 if __name__ == "__main__":

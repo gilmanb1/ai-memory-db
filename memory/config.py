@@ -75,7 +75,7 @@ NARRATIVE_SEARCH_LIMIT      = 3              # max narratives returned in prompt
 NARRATIVE_TOKEN_BUDGET      = 400            # tokens reserved for narratives in prompt recall
 
 # ── Retrieval strategies ──────────────────────────────────────────────
-RETRIEVAL_STRATEGIES    = ["semantic", "bm25", "graph", "temporal", "path"]
+RETRIEVAL_STRATEGIES    = ["semantic", "bm25", "graph", "temporal"]
 RRF_K                   = 60               # reciprocal rank fusion constant
 RERANK_ENABLED          = False            # cross-encoder reranking (requires extra model)
 RERANK_MODEL            = None             # future: e.g. "cross-encoder/ms-marco-MiniLM-L-6-v2"

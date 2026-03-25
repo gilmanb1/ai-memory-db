@@ -114,7 +114,7 @@ def retrieve_graph(
     conn = db.get_connection(read_only=True, db_path=db_path)
     try:
         known_entities = db.get_top_entities(conn, 200, scope=scope)
-        prompt_entities = _entities_in_text(query_text, known_entities)
+        prompt_entities = _entities_in_text(query_text, known_entities, db_path=db_path)
         if not prompt_entities:
             return []
 
@@ -360,14 +360,53 @@ _BM25_TABLES = {
 }
 
 
-def _entities_in_text(text: str, known_entities: list[str]) -> list[str]:
-    """Return which known entities appear (case-insensitive) in text."""
+def _entities_in_text(
+    text: str,
+    known_entities: list[str],
+    db_path: Optional[str] = None,
+    top_k: int = 5,
+) -> list[str]:
+    """Return which known entities are relevant to text.
+
+    First tries exact substring matching (fast). If no matches, falls back
+    to embedding-based similarity search against entity embeddings.
+    """
     text_lower = text.lower()
     found = []
     for entity in known_entities:
         pattern = re.escape(entity.lower())
         if re.search(r'\b' + pattern + r'\b', text_lower):
             found.append(entity)
+    if found:
+        return found
+
+    # Fallback: embedding-based entity matching
+    try:
+        from .embeddings import embed_query
+        query_vec = embed_query(text)
+        if not query_vec:
+            return []
+
+        from .config import DB_PATH
+        path = db_path or str(DB_PATH)
+        conn = db.get_connection(read_only=True, db_path=path)
+        try:
+            rows = conn.execute("""
+                SELECT name,
+                       list_cosine_similarity(embedding, ?::FLOAT[]) AS score
+                FROM entities
+                WHERE is_active = TRUE AND embedding IS NOT NULL
+                ORDER BY score DESC
+                LIMIT ?
+            """, [query_vec, top_k]).fetchall()
+            for name, score in rows:
+                if score and score >= 0.40:
+                    found.append(name)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
     return found
 
 

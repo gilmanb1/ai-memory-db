@@ -389,6 +389,7 @@ def get_connection(
     if not read_only:
         _run_migrations(conn)
     _try_load_vss(conn)
+    ensure_fts(conn)
     return conn
 
 

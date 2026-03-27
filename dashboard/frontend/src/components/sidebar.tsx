@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useScope } from "@/context/scope-context";
 import {
   Brain,
   Lightbulb,
@@ -19,6 +20,7 @@ import {
   Code2,
   Waypoints,
   ClipboardCheck,
+  FolderOpen,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -42,6 +44,7 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { selectedScope, setSelectedScope, scopes } = useScope();
 
   return (
     <aside className="fixed left-0 top-0 h-full w-56 bg-card border-r border-border flex flex-col z-50">
@@ -51,6 +54,29 @@ export function Sidebar() {
           Memory Dashboard
         </h1>
       </div>
+
+      {/* Scope selector */}
+      {scopes.length > 1 && (
+        <div className="px-3 py-2 border-b border-border">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <FolderOpen className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Scope</span>
+          </div>
+          <select
+            value={selectedScope || "__all__"}
+            onChange={(e) => setSelectedScope(e.target.value === "__all__" ? null : e.target.value)}
+            className="w-full text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="__all__">All scopes</option>
+            {scopes.map((s) => (
+              <option key={s.scope} value={s.scope}>
+                {s.display_name} ({s.count})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <nav className="flex-1 overflow-y-auto py-2">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active =
@@ -73,7 +99,7 @@ export function Sidebar() {
         })}
       </nav>
       <div className="p-3 border-t border-border text-xs text-muted-foreground">
-        ai-memory-db
+        {selectedScope ? scopes.find(s => s.scope === selectedScope)?.display_name || "filtered" : "all scopes"}
       </div>
     </aside>
   );

@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Guardrail } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +40,10 @@ export default function GuardrailsPage() {
   const [newConsequence, setNewConsequence] = useState("");
   const [newFilePaths, setNewFilePaths] = useState("");
   const [newImportance, setNewImportance] = useState("5");
+  const { scopeParam, selectedScope } = useScope();
 
-  const fetcher = useCallback(() => api.getGuardrails({ limit: "200" }), []);
-  const { data, refetch } = usePolling(fetcher, 3000);
+  const fetcher = useCallback(() => api.getGuardrails({ ...scopeParam, limit: "200" }), [selectedScope]);
+  const { data, refetch } = usePolling(fetcher, 3000, [selectedScope]);
 
   const items: Guardrail[] = data?.items || [];
   const filtered = textFilter

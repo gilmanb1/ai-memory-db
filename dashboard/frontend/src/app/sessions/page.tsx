@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Session } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -30,9 +31,10 @@ function truncate(text: string | null, max: number): string {
 
 export default function SessionsPage() {
   const [textFilter, setTextFilter] = useState("");
+  const { scopeParam, selectedScope } = useScope();
 
-  const fetcher = useCallback(() => api.getSessions({ limit: "200" }), []);
-  const { data } = usePolling(fetcher, 5000);
+  const fetcher = useCallback(() => api.getSessions({ ...scopeParam, limit: "200" }), [selectedScope]);
+  const { data } = usePolling(fetcher, 5000, [selectedScope]);
 
   const items: Session[] = data?.items || [];
   const filtered = textFilter

@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Decision } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,9 +30,10 @@ export default function DecisionsPage() {
   const [newText, setNewText] = useState("");
   const [newImportance, setNewImportance] = useState("7");
   const [textFilter, setTextFilter] = useState("");
+  const { scopeParam, selectedScope } = useScope();
 
-  const fetcher = useCallback(() => api.getDecisions({ limit: "200" }), []);
-  const { data, refetch } = usePolling(fetcher, 3000);
+  const fetcher = useCallback(() => api.getDecisions({ ...scopeParam, limit: "200" }), [selectedScope]);
+  const { data, refetch } = usePolling(fetcher, 3000, [selectedScope]);
 
   const items: Decision[] = data?.items || [];
   const filtered = textFilter

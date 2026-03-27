@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Observation } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +25,10 @@ import { toast } from "sonner";
 export default function ObservationsPage() {
   const [textFilter, setTextFilter] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const { scopeParam, selectedScope } = useScope();
 
-  const fetcher = useCallback(() => api.getObservations({ limit: "200" }), []);
-  const { data, refetch } = usePolling(fetcher, 3000);
+  const fetcher = useCallback(() => api.getObservations({ ...scopeParam, limit: "200" }), [selectedScope]);
+  const { data, refetch } = usePolling(fetcher, 3000, [selectedScope]);
 
   const items: Observation[] = data?.items || [];
   const filtered = textFilter

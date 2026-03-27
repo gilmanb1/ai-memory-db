@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -43,9 +44,10 @@ export default function IdeasPage() {
   const [newText, setNewText] = useState("");
   const [newType, setNewType] = useState("insight");
   const [textFilter, setTextFilter] = useState("");
+  const { scopeParam, selectedScope } = useScope();
 
-  const fetcher = useCallback(() => api.getIdeas({ limit: "200" }), []);
-  const { data, refetch } = usePolling(fetcher, 3000);
+  const fetcher = useCallback(() => api.getIdeas({ ...scopeParam, limit: "200" }), [selectedScope]);
+  const { data, refetch } = usePolling(fetcher, 3000, [selectedScope]);
 
   const items: Idea[] = data?.items || [];
   const filtered = textFilter

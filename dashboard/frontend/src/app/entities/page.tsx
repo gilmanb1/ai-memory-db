@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Entity } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -68,12 +69,13 @@ export default function EntitiesPage() {
   // Create form
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("general");
+  const { scopeParam, selectedScope } = useScope();
 
-  const params: Record<string, string> = { limit: "200" };
+  const params: Record<string, string> = { ...scopeParam, limit: "200" };
   if (typeFilter !== "all") params.entity_type = typeFilter;
 
-  const fetcher = useCallback(() => api.getEntities(params), [typeFilter]);
-  const { data, refetch } = usePolling(fetcher, 3000, [typeFilter]);
+  const fetcher = useCallback(() => api.getEntities(params), [typeFilter, selectedScope]);
+  const { data, refetch } = usePolling(fetcher, 3000, [typeFilter, selectedScope]);
 
   const items: Entity[] = data?.items || [];
   const filtered = textFilter

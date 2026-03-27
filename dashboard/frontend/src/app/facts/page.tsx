@@ -35,6 +35,7 @@ import { TemporalBadge } from "@/components/temporal-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Plus, Pencil, Trash2, TrendingUp, TrendingDown } from "lucide-react";
 import { toast } from "sonner";
+import { useScope } from "@/context/scope-context";
 
 const CATEGORIES = [
   "architecture", "implementation", "operational", "dependency",
@@ -55,10 +56,11 @@ export default function FactsPage() {
   const [newClass, setNewClass] = useState("long");
   const [newImportance, setNewImportance] = useState("5");
 
-  const params: Record<string, string> = { limit: "200" };
+  const { scopeParam, selectedScope } = useScope();
+  const params: Record<string, string> = { limit: "200", ...scopeParam };
   if (filterClass !== "all") params.temporal_class = filterClass;
 
-  const fetcher = useCallback(() => api.getFacts(params), [filterClass]);
+  const fetcher = useCallback(() => api.getFacts(params), [filterClass, selectedScope]);
   const { data, refetch } = usePolling(fetcher, 3000, [filterClass]);
 
   const items: Fact[] = data?.items || [];

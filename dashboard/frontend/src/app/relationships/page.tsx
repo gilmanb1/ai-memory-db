@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import { usePolling } from "@/hooks/use-polling";
+import { useScope } from "@/context/scope-context";
 import { Relationship } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,9 +35,10 @@ export default function RelationshipsPage() {
   const [newRelType, setNewRelType] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newStrength, setNewStrength] = useState("5");
+  const { scopeParam, selectedScope } = useScope();
 
-  const fetcher = useCallback(() => api.getRelationships({ limit: "200" }), []);
-  const { data, refetch } = usePolling(fetcher, 3000);
+  const fetcher = useCallback(() => api.getRelationships({ ...scopeParam, limit: "200" }), [selectedScope]);
+  const { data, refetch } = usePolling(fetcher, 3000, [selectedScope]);
 
   const items: Relationship[] = data?.items || [];
   const filtered = textFilter

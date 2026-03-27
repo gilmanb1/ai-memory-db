@@ -10968,6 +10968,100 @@ class TestRememberSimilarityWarning(unittest.TestCase):
         self.assertFalse(is_new)
 
 
+# ── Guardrail promotion tests ──────────────────────────────────────────────
+
+class TestGuardrailPromotion(unittest.TestCase):
+    """
+    GIVEN facts that look like rules (always/never/don't) with high reinforcement
+    WHEN detect_guardrail_candidates is called
+    THEN those facts are flagged as guardrail candidates
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_directive_fact_detected(self):
+        """A fact with 'always' or 'never' and high session_count should be a candidate."""
+        from memory.guardrail_promotion import detect_guardrail_candidates
+        emb = _mock_embed("Always write tests before implementing new features")
+        fid, _ = db.upsert_fact(
+            self.conn, "Always write tests before implementing new features",
+            "user_preference", "long", "high", emb, "s1", _noop_decay, importance=9,
+        )
+        # Simulate being seen in 3+ sessions
+        self.conn.execute("UPDATE facts SET session_count = 5 WHERE id = ?", [fid])
+        candidates = detect_guardrail_candidates(self.conn)
+        texts = [c["text"] for c in candidates]
+        self.assertTrue(any("Always write tests" in t for t in texts))
+
+    def test_low_session_count_not_promoted(self):
+        """A directive fact seen only once should NOT be a candidate."""
+        from memory.guardrail_promotion import detect_guardrail_candidates
+        emb = _mock_embed("Never use eval in production code")
+        db.upsert_fact(
+            self.conn, "Never use eval in production code",
+            "constraint", "long", "high", emb, "s1", _noop_decay, importance=8,
+        )
+        # session_count defaults to 1
+        candidates = detect_guardrail_candidates(self.conn)
+        texts = [c["text"] for c in candidates]
+        self.assertFalse(any("eval" in t for t in texts))
+
+    def test_non_directive_fact_excluded(self):
+        """A regular fact without directive language should not be promoted."""
+        from memory.guardrail_promotion import detect_guardrail_candidates
+        emb = _mock_embed("DuckDB uses single-writer concurrency model")
+        fid, _ = db.upsert_fact(
+            self.conn, "DuckDB uses single-writer concurrency model",
+            "architecture", "long", "high", emb, "s1", _noop_decay, importance=9,
+        )
+        self.conn.execute("UPDATE facts SET session_count = 10 WHERE id = ?", [fid])
+        candidates = detect_guardrail_candidates(self.conn)
+        texts = [c["text"] for c in candidates]
+        self.assertFalse(any("single-writer" in t for t in texts))
+
+    def test_already_guardrailed_excluded(self):
+        """A fact that already has a matching guardrail should not be re-proposed."""
+        from memory.guardrail_promotion import detect_guardrail_candidates
+        emb = _mock_embed("Always run the linter before committing")
+        fid, _ = db.upsert_fact(
+            self.conn, "Always run the linter before committing",
+            "user_preference", "long", "high", emb, "s1", _noop_decay, importance=9,
+        )
+        self.conn.execute("UPDATE facts SET session_count = 5 WHERE id = ?", [fid])
+        # Create a matching guardrail
+        db.upsert_guardrail(
+            self.conn, warning="Always run the linter before committing",
+            embedding=emb, session_id="s1",
+        )
+        candidates = detect_guardrail_candidates(self.conn)
+        texts = [c["text"] for c in candidates]
+        self.assertFalse(any("linter" in t for t in texts))
+
+    def test_format_proposal(self):
+        """format_guardrail_proposals should produce readable markdown."""
+        from memory.guardrail_promotion import format_guardrail_proposals
+        candidates = [
+            {"id": "f1", "text": "Always write tests first", "session_count": 5,
+             "importance": 9, "category": "user_preference", "scope": "__global__"},
+            {"id": "f2", "text": "Never skip code review", "session_count": 3,
+             "importance": 8, "category": "constraint", "scope": "/home/user/project"},
+        ]
+        output = format_guardrail_proposals(candidates)
+        self.assertIn("Always write tests first", output)
+        self.assertIn("Never skip code review", output)
+        self.assertIn("guardrail", output.lower())
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

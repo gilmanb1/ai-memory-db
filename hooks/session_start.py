@@ -114,6 +114,19 @@ def main(payload: dict) -> None:
         parts.append(f"truncated {truncation_stats['truncated']} items")
     print(" | ".join(parts), file=sys.stderr)
 
+    # ── Check for guardrail promotion candidates ───────────────────────
+    try:
+        from memory.guardrail_promotion import detect_guardrail_candidates
+        gp_conn = db.get_connection(read_only=True)
+        try:
+            candidates = detect_guardrail_candidates(gp_conn, scope=scope)
+            if candidates:
+                print(f"[memory] {len(candidates)} fact(s) should be guardrails. Run /audit-memory for details.", file=sys.stderr)
+        finally:
+            gp_conn.close()
+    except Exception:
+        pass
+
     # ── Incremental code graph parse ──────────────────────────────────
     try:
         from memory.config import CODE_GRAPH_ENABLED

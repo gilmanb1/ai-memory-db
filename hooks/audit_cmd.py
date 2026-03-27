@@ -187,6 +187,17 @@ def main() -> None:
         except Exception:
             pass
 
+        # ── 11. Guardrail promotion candidates ─────────────────────────
+        try:
+            from memory.guardrail_promotion import detect_guardrail_candidates, format_guardrail_proposals
+            candidates = detect_guardrail_candidates(conn)
+            if candidates:
+                issues.append(f"ACTION: {len(candidates)} fact(s) should be promoted to guardrails")
+                for c in candidates[:5]:
+                    issues.append(f"  → \"{c['text'][:80]}\" (seen {c['session_count']}x, imp:{c['importance']})")
+        except Exception:
+            pass
+
         # ── Output ───────────────────────────────────────────────────────
         if not issues:
             print("### No Issues Found")

@@ -38,6 +38,35 @@ def resolve_scope(cwd: str) -> str:
     return str(Path(cwd).resolve())
 
 
+def resolve_scopes(primary_cwd: str) -> list[str]:
+    """
+    Resolve all active scopes for a session.
+
+    Includes the primary scope (from cwd) plus any additional scopes
+    specified via MEMORY_ADDITIONAL_SCOPES environment variable.
+
+    The env var is a comma or colon-separated list of paths.
+    Each path is resolved to its git root (same as resolve_scope).
+    """
+    import os
+
+    scopes = []
+    primary = resolve_scope(primary_cwd)
+    if primary and primary != GLOBAL_SCOPE:
+        scopes.append(primary)
+
+    additional = os.environ.get("MEMORY_ADDITIONAL_SCOPES", "").strip()
+    if additional:
+        for path in additional.replace(":", ",").split(","):
+            path = path.strip()
+            if path:
+                s = resolve_scope(path)
+                if s and s != GLOBAL_SCOPE and s not in scopes:
+                    scopes.append(s)
+
+    return scopes if scopes else [primary]
+
+
 def scope_display_name(scope: str) -> str:
     """Short display name for a scope (last path component or 'global')."""
     if scope == GLOBAL_SCOPE:

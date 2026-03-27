@@ -11379,6 +11379,93 @@ class TestCrossRepoIsolation(unittest.TestCase):
         self.assertNotIn("PyTorch", fact_texts)
 
 
+# ── Multi-scope tests (--add-dir scenario) ─────────────────────────────────
+
+class TestMultiScopeRecall(unittest.TestCase):
+    """
+    GIVEN a user working across multiple repos (e.g., --add-dir)
+    WHEN recall runs with multiple scopes
+    THEN facts from all specified scopes + global are included
+    """
+
+    REPO_A = "/home/user/projects/api-service"
+    REPO_B = "/home/user/projects/shared-lib"
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Repo A facts
+        db.upsert_fact(
+            self.conn, "API service exposes REST endpoints on port 8080",
+            "architecture", "long", "high",
+            _mock_embed("API service exposes REST endpoints on port 8080"),
+            "s1", _noop_decay, scope=self.REPO_A, importance=8,
+        )
+        # Repo B facts
+        db.upsert_fact(
+            self.conn, "Shared library provides common auth utilities",
+            "architecture", "long", "high",
+            _mock_embed("Shared library provides common auth utilities"),
+            "s2", _noop_decay, scope=self.REPO_B, importance=8,
+        )
+        # Global
+        db.upsert_fact(
+            self.conn, "All projects use semantic versioning",
+            "operational", "long", "high",
+            _mock_embed("All projects use semantic versioning"),
+            "s1", _noop_decay, scope="__global__", importance=7,
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_multi_scope_filter_sql(self):
+        """Multi-scope filter should produce SQL matching all specified scopes + global."""
+        from memory.db import _multi_scope_filter
+        sql, params = _multi_scope_filter([self.REPO_A, self.REPO_B])
+        self.assertIn("scope IN", sql)
+        self.assertIn(self.REPO_A, params)
+        self.assertIn(self.REPO_B, params)
+        self.assertIn("__global__", params)
+
+    def test_multi_scope_returns_both_repos(self):
+        """Session recall with multi-scope should include facts from both repos."""
+        ctx = recall.session_recall(self.conn, scopes=[self.REPO_A, self.REPO_B])
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("REST endpoints", text)
+        self.assertIn("auth utilities", text)
+        self.assertIn("semantic versioning", text)
+
+    def test_single_scope_excludes_other(self):
+        """Single scope should still exclude the other repo."""
+        ctx = recall.session_recall(self.conn, scope=self.REPO_A)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("REST endpoints", text)
+        self.assertNotIn("auth utilities", text)
+
+    @patch("memory.scope.resolve_scope", side_effect=lambda cwd: cwd)
+    def test_multi_scope_from_env(self, _mock_resolve):
+        """MEMORY_ADDITIONAL_SCOPES env var should be parsed into scope list."""
+        from memory.scope import resolve_scopes
+        with patch.dict(os.environ, {"MEMORY_ADDITIONAL_SCOPES": f"{self.REPO_B}"}):
+            scopes = resolve_scopes(self.REPO_A)
+            self.assertIn(self.REPO_A, scopes)
+            self.assertIn(self.REPO_B, scopes)
+
+    @patch("memory.scope.resolve_scope", side_effect=lambda cwd: cwd)
+    def test_empty_env_returns_single_scope(self, _mock_resolve):
+        """Without the env var, resolve_scopes returns just the primary scope."""
+        from memory.scope import resolve_scopes
+        os.environ.pop("MEMORY_ADDITIONAL_SCOPES", None)
+        scopes = resolve_scopes(self.REPO_A)
+        self.assertEqual(scopes, [self.REPO_A])
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

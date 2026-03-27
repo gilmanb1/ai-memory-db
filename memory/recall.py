@@ -102,11 +102,23 @@ def _dedup_by_id(items: list[dict]) -> list[dict]:
 def session_recall(
     conn: duckdb.DuckDBPyConnection,
     scope: Optional[str] = None,
+    scopes: Optional[list[str]] = None,
 ) -> dict:
     """
     Retrieve broad context for the beginning of a new session.
     Project-local items first, then global items to fill limits.
+
+    If `scopes` is provided (multi-repo scenario, e.g. --add-dir),
+    items from all specified scopes + global are included.
     """
+    # Multi-scope: merge all scopes into a single effective scope query
+    if scopes and len(scopes) > 1:
+        return _multi_scope_session_recall(conn, scopes)
+
+    # Single scope or scopes with one entry
+    if scopes and len(scopes) == 1:
+        scope = scopes[0]
+
     if scope and scope != GLOBAL_SCOPE:
         # Project-local first, then global fills remaining slots
         local_long = db.get_facts_by_temporal(conn, "long", SESSION_LONG_FACTS_LIMIT, scope=scope)
@@ -171,6 +183,101 @@ def session_recall(
         "guardrails":    guardrails,
         "procedures":    procedures,
         "community_summaries": community_summaries,
+    }
+
+
+def _multi_scope_session_recall(
+    conn: duckdb.DuckDBPyConnection,
+    scopes: list[str],
+) -> dict:
+    """Session recall across multiple scopes — merges items from all scopes + global."""
+    all_long = []
+    all_medium = []
+    all_decisions = []
+    all_entities: list[str] = []
+    all_rels = []
+    all_observations = []
+    all_guardrails = []
+    all_procedures = []
+    all_community = []
+
+    # Collect from each scope (including global via _scope_filter)
+    seen_ids: set[str] = set()
+    for scope in scopes:
+        local_long = db.get_facts_by_temporal(conn, "long", SESSION_LONG_FACTS_LIMIT, scope=scope)
+        for f in local_long:
+            if f.get("id") not in seen_ids:
+                seen_ids.add(f["id"])
+                all_long.append(f)
+
+        local_med = db.get_facts_by_temporal(conn, "medium", SESSION_MEDIUM_FACTS_LIMIT, scope=scope)
+        for f in local_med:
+            if f.get("id") not in seen_ids:
+                seen_ids.add(f["id"])
+                all_medium.append(f)
+
+        local_dec = db.get_decisions(conn, SESSION_DECISIONS_LIMIT, scope=scope)
+        for d in local_dec:
+            if d.get("id") not in seen_ids:
+                seen_ids.add(d["id"])
+                all_decisions.append(d)
+
+        all_entities.extend(db.get_top_entities(conn, SESSION_ENTITIES_LIMIT, scope=scope))
+        all_rels.extend(db.get_all_relationships(conn, scope=scope))
+
+        try:
+            obs = db.get_observations_by_temporal(conn, "long", SESSION_OBSERVATIONS_LIMIT, scope=scope)
+            obs += db.get_observations_by_temporal(conn, "medium", SESSION_OBSERVATIONS_LIMIT, scope=scope)
+            for o in obs:
+                if o.get("id") not in seen_ids:
+                    seen_ids.add(o["id"])
+                    all_observations.append(o)
+        except Exception:
+            pass
+
+        try:
+            for g in db.get_all_guardrails(conn, limit=SESSION_GUARDRAILS_LIMIT, scope=scope):
+                if g.get("id") not in seen_ids:
+                    seen_ids.add(g["id"])
+                    all_guardrails.append(g)
+        except Exception:
+            pass
+
+        try:
+            for p in db.get_procedures(conn, limit=SESSION_PROCEDURES_LIMIT, scope=scope):
+                if p.get("id") not in seen_ids:
+                    seen_ids.add(p["id"])
+                    all_procedures.append(p)
+        except Exception:
+            pass
+
+        try:
+            all_community.extend(db.get_community_summaries(conn, level=1, limit=SESSION_COMMUNITY_LIMIT, scope=scope))
+        except Exception:
+            pass
+
+    # Dedup and cap
+    all_long = _dedup_by_id(all_long)[:SESSION_LONG_FACTS_LIMIT]
+    all_medium = _dedup_by_id(all_medium)[:SESSION_MEDIUM_FACTS_LIMIT]
+    all_decisions = _dedup_by_id(all_decisions)[:SESSION_DECISIONS_LIMIT]
+    all_entities = list(dict.fromkeys(all_entities))[:SESSION_ENTITIES_LIMIT]
+    all_observations = _dedup_by_id(all_observations)[:SESSION_OBSERVATIONS_LIMIT]
+
+    all_medium.sort(
+        key=lambda f: temporal_weight(f["temporal_class"], f["decay_score"]),
+        reverse=True,
+    )
+
+    return {
+        "long_facts":    all_long,
+        "medium_facts":  all_medium,
+        "decisions":     all_decisions,
+        "entities":      all_entities,
+        "relationships": all_rels,
+        "observations":  all_observations,
+        "guardrails":    all_guardrails,
+        "procedures":    all_procedures,
+        "community_summaries": all_community,
     }
 
 

@@ -808,6 +808,18 @@ def _scope_filter(scope: Optional[str]) -> tuple[str, list]:
     return ("AND (scope = ? OR scope = ?)", [scope, GLOBAL_SCOPE])
 
 
+def _multi_scope_filter(scopes: list[str]) -> tuple[str, list]:
+    """
+    Return a (sql_fragment, params) tuple to filter by multiple scopes.
+    Matches any of the specified scopes OR global.
+    """
+    if not scopes:
+        return ("", [])
+    all_scopes = list(set(scopes + [GLOBAL_SCOPE]))
+    placeholders = ", ".join("?" * len(all_scopes))
+    return (f"AND scope IN ({placeholders})", all_scopes)
+
+
 def _track_item_scope(
     conn: duckdb.DuckDBPyConnection,
     item_id: str,

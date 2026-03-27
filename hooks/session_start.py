@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path.home() / ".claude"))
 
 from memory import db, recall
-from memory.scope import resolve_scope
+from memory.scope import resolve_scope, resolve_scopes
 
 
 def main(payload: dict) -> None:
@@ -50,9 +50,10 @@ def main(payload: dict) -> None:
             file=sys.stderr,
         )
 
-    # Resolve project scope from cwd
+    # Resolve project scope(s) from cwd + MEMORY_ADDITIONAL_SCOPES
     cwd = payload.get("cwd", "")
     scope = resolve_scope(cwd) if cwd else None
+    scopes = resolve_scopes(cwd) if cwd else None
 
     conn = None
     try:
@@ -65,7 +66,11 @@ def main(payload: dict) -> None:
         if total_facts == 0:
             sys.exit(0)
 
-        context = recall.session_recall(conn, scope=scope)
+        # Use multi-scope recall if additional scopes are configured
+        if scopes and len(scopes) > 1:
+            context = recall.session_recall(conn, scopes=scopes)
+        else:
+            context = recall.session_recall(conn, scope=scope)
     except Exception as exc:
         print(f"[session_start] Memory recall failed: {exc}", file=sys.stderr)
         sys.exit(0)

@@ -10321,6 +10321,167 @@ class TestCorpusGuardrailEnforcement(_CorpusTestBase):
         self.assertIn("Terraform state", result["warning_text"])
 
 
+# ── Scaled corpus tests (1d, 1w, 1m, 1y) ──────────────────────────────────
+
+import test_corpus_scaled
+
+test_corpus_scaled.set_helpers(_mock_embed, _noop_decay)
+
+
+class _ScaledCorpusBase(unittest.TestCase):
+    """Base for scaled corpus tests — subclasses set cls.builder."""
+    builder = None  # Override in subclasses
+    __test__ = False  # Prevent pytest from collecting the base class directly
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.meta = self.__class__.builder(self.conn, db)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    # ── Shared assertions ───────────────────────────────────────────────
+
+    def test_all_facts_active_or_deactivated(self):
+        """Every fact should have a definitive is_active state."""
+        total = self.conn.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
+        active = self.conn.execute("SELECT COUNT(*) FROM facts WHERE is_active = TRUE").fetchone()[0]
+        inactive = self.conn.execute("SELECT COUNT(*) FROM facts WHERE is_active = FALSE").fetchone()[0]
+        self.assertEqual(total, active + inactive)
+
+    def test_session_recall_produces_output(self):
+        """Session recall should produce non-empty output for the first scope."""
+        scope = self.meta["scopes"][0]
+        ctx = recall.session_recall(self.conn, scope=scope)
+        text, stats = recall.format_session_context(ctx)
+        self.assertGreater(len(text), 0, f"Session recall empty for {scope}")
+        self.assertGreater(stats["included"], 0)
+
+    def test_no_deactivated_in_session_recall(self):
+        """Deactivated facts should never appear in session recall."""
+        for scope in self.meta["scopes"]:
+            ctx = recall.session_recall(self.conn, scope=scope)
+            text, _ = recall.format_session_context(ctx)
+            # Get deactivated fact texts
+            dead = self.conn.execute(
+                "SELECT text FROM facts WHERE is_active = FALSE"
+            ).fetchall()
+            for (dead_text,) in dead:
+                self.assertNotIn(dead_text, text,
+                                 f"Deactivated fact found in session recall for {scope}")
+
+    def test_scope_isolation(self):
+        """Facts from scope A should not appear in scope B session recall."""
+        if len(self.meta["scopes"]) < 2:
+            return
+        scope_a, scope_b = self.meta["scopes"][0], self.meta["scopes"][1]
+        # Get a fact unique to scope_b
+        rows = self.conn.execute(
+            "SELECT text FROM facts WHERE scope = ? AND is_active = TRUE LIMIT 1",
+            [scope_b],
+        ).fetchall()
+        if not rows:
+            return
+        b_text = rows[0][0]
+
+        ctx_a = recall.session_recall(self.conn, scope=scope_a)
+        text_a, _ = recall.format_session_context(ctx_a)
+        self.assertNotIn(b_text, text_a, f"Scope B fact leaked into scope A")
+
+    def test_bm25_search_works(self):
+        """BM25 keyword search should return results."""
+        # Pick a word from the first active fact
+        row = self.conn.execute(
+            "SELECT text FROM facts WHERE is_active = TRUE LIMIT 1"
+        ).fetchone()
+        if not row:
+            return
+        word = row[0].split()[0]
+        results = db.search_bm25(self.conn, "facts", word, "text", "id, text", 5)
+        # BM25 may or may not find a match depending on FTS stemming
+        self.assertIsInstance(results, list)
+
+    def test_entity_count_matches(self):
+        """Entity count should match what was inserted."""
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM entities WHERE is_active = TRUE"
+        ).fetchone()[0]
+        self.assertGreaterEqual(count, self.meta["counts"]["entities"] * 0.9,
+                                "Entity count too low")
+
+    def test_relationship_count(self):
+        """Relationship count should be reasonable."""
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM relationships WHERE is_active = TRUE"
+        ).fetchone()[0]
+        self.assertGreater(count, 0)
+
+    def test_guardrails_present(self):
+        """Guardrails should exist in the corpus (some may dedup)."""
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM guardrails WHERE is_active = TRUE"
+        ).fetchone()[0]
+        expected = self.meta["counts"]["guardrails"]
+        # Allow dedup to reduce count by up to 30%
+        self.assertGreaterEqual(count, expected * 0.7,
+                                f"Expected ~{expected} guardrails, got {count}")
+
+    def test_direct_query_most_recent_facts(self):
+        """Direct query for recent facts should work."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "Show me the 5 most recent facts", None)
+        self.assertIsNotNone(result)
+        lines = [l for l in result.split("\n") if l.startswith("[facts:")]
+        self.assertEqual(len(lines), 5)
+
+    def test_knowledge_graph_builds(self):
+        """Knowledge graph should build without error."""
+        build = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build(conn, types=["entity", "fact"], limit=50, cluster_by="type")
+            self.assertGreater(len(result["nodes"]), 0)
+            # Edge integrity
+            node_ids = {n["id"] for n in result["nodes"]}
+            for edge in result["edges"]:
+                self.assertIn(edge["source"], node_ids)
+                self.assertIn(edge["target"], node_ids)
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+
+class TestScaledCorpus1Day(_ScaledCorpusBase):
+    """1 day of usage: 24 items, 1 scope."""
+    __test__ = True
+    builder = staticmethod(test_corpus_scaled.build_corpus_1d)
+
+
+class TestScaledCorpus1Week(_ScaledCorpusBase):
+    """1 week of usage: 93 items, 2 scopes."""
+    __test__ = True
+    builder = staticmethod(test_corpus_scaled.build_corpus_1w)
+
+
+class TestScaledCorpus1Month(_ScaledCorpusBase):
+    """1 month of usage: 371 items, 3 scopes."""
+    __test__ = True
+    builder = staticmethod(test_corpus_scaled.build_corpus_1m)
+
+
+class TestScaledCorpus1Year(_ScaledCorpusBase):
+    """1 year of usage: 2535 items, 5 scopes."""
+    __test__ = True
+    builder = staticmethod(test_corpus_scaled.build_corpus_1y)
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

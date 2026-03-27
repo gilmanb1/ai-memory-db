@@ -73,7 +73,7 @@ def main(payload: dict) -> None:
         if conn is not None:
             conn.close()
 
-    system_message = recall.format_session_context(context)
+    system_message, truncation_stats = recall.format_session_context(context)
     if not system_message:
         sys.exit(0)
 
@@ -110,6 +110,8 @@ def main(payload: dict) -> None:
         parts.append(f"{guardrail_count} guardrails")
     if procedure_count:
         parts.append(f"{procedure_count} procedures")
+    if truncation_stats.get("truncated", 0) > 0:
+        parts.append(f"truncated {truncation_stats['truncated']} items")
     print(" | ".join(parts), file=sys.stderr)
 
     # ── Incremental code graph parse ──────────────────────────────────

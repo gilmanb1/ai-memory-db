@@ -1,4 +1,5 @@
 from typing import Optional
+from collections import Counter
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -85,6 +86,18 @@ def get_graph(scope: Optional[str] = None, limit: int = 100):
                 "strength": strength or 1.0,
             })
 
+        # Compute per-node degree and most-common rel_type (cluster)
+        degree_counter: Counter = Counter()
+        node_rel_types: dict[str, list[str]] = {}
+        rel_type_counter: Counter = Counter()
+        for edge in edges:
+            src, tgt, rtype = edge["source"], edge["target"], edge["rel_type"]
+            degree_counter[src] += 1
+            degree_counter[tgt] += 1
+            node_rel_types.setdefault(src, []).append(rtype)
+            node_rel_types.setdefault(tgt, []).append(rtype)
+            rel_type_counter[rtype] += 1
+
         # Get entity details
         nodes = []
         if entity_names:
@@ -97,24 +110,30 @@ def get_graph(scope: Optional[str] = None, limit: int = 100):
 
             seen = set()
             for name, etype, scount in ent_rows:
+                most_common = Counter(node_rel_types.get(name, [])).most_common(1)
                 nodes.append({
                     "id": name,
                     "label": name,
                     "entity_type": etype or "general",
                     "session_count": scount or 1,
+                    "degree": degree_counter.get(name, 0),
+                    "cluster": most_common[0][0] if most_common else "none",
                 })
                 seen.add(name)
 
             # Add any entities referenced in rels but not in entities table
             for name in entity_names - seen:
+                most_common = Counter(node_rel_types.get(name, [])).most_common(1)
                 nodes.append({
                     "id": name,
                     "label": name,
                     "entity_type": "unknown",
                     "session_count": 1,
+                    "degree": degree_counter.get(name, 0),
+                    "cluster": most_common[0][0] if most_common else "none",
                 })
 
-        return {"nodes": nodes, "edges": edges}
+        return {"nodes": nodes, "edges": edges, "rel_type_counts": dict(rel_type_counter)}
     finally:
         conn.close()
 

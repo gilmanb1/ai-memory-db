@@ -177,6 +177,7 @@ def main(payload: dict) -> None:
 
     # Fast path: check pre-fetch cache from status_line
     additional_context = None
+    truncation_stats = {"included": 0, "truncated": 0, "section_counts": {}}
     session_id = payload.get("session_id", "")
     if session_id:
         try:
@@ -235,11 +236,69 @@ def main(payload: dict) -> None:
         except Exception:
             pass  # Non-critical
 
-        additional_context = recall.format_prompt_context(context)
-    if not additional_context:
+        # ── Save recall log for /recalled command ──────────────────────
+        try:
+            from memory.config import MEMORY_DIR
+            recall_log = {
+                "session_id": session_id,
+                "prompt": prompt_text[:200],
+                "facts": [{"id": f.get("id","")[:12], "text": f.get("text","")[:120], "score": round(f.get("score",0), 3), "temporal_class": f.get("temporal_class",""), "scope": f.get("scope","")} for f in context.get("facts", []) if isinstance(f, dict)],
+                "guardrails": [{"id": g.get("id","")[:12], "text": g.get("warning","")[:120], "scope": g.get("scope","")} for g in context.get("guardrails", []) if isinstance(g, dict)],
+                "procedures": [{"id": p.get("id","")[:12], "text": p.get("task_description","")[:120]} for p in context.get("procedures", []) if isinstance(p, dict)],
+                "error_solutions": [{"id": e.get("id","")[:12], "text": e.get("error_pattern","")[:120]} for e in context.get("error_solutions", []) if isinstance(e, dict)],
+                "observations": [{"id": o.get("id","")[:12], "text": o.get("text","")[:120]} for o in context.get("observations", []) if isinstance(o, dict)],
+                "relationships": [f"{r.get('from','')} --[{r.get('rel_type','')}]--> {r.get('to','')}" for r in context.get("relationships", []) if isinstance(r, dict)],
+                "entities_hit": context.get("entities_hit", []),
+                "code_context": [{"file": c.get("file_path",""), "symbols": len(c.get("symbols", []))} for c in context.get("code_context", []) if isinstance(c, dict)],
+            }
+            recall_log_path = MEMORY_DIR / "last_recall.json"
+            import json as _json
+            recall_log_path.write_text(_json.dumps(recall_log, indent=2))
+        except Exception:
+            pass  # Non-critical
+
+        # ── Check for user corrections to previously recalled facts ───
+        correction_msg = ""
+        try:
+            from memory.config import CORRECTION_DETECTION_ENABLED
+            if CORRECTION_DETECTION_ENABLED:
+                from memory.corrections import detect_correction, resolve_correction, apply_correction
+                detection = detect_correction(prompt_text)
+                if detection:
+                    # Load previous recall items
+                    from memory.config import MEMORY_DIR
+                    prev_recall_path = MEMORY_DIR / "last_recall.json"
+                    if prev_recall_path.exists():
+                        import json as _json2
+                        prev_data = _json2.loads(prev_recall_path.read_text())
+                        prev_items = prev_data.get("facts", []) + prev_data.get("guardrails", [])
+                        prev_items += prev_data.get("procedures", []) + prev_data.get("error_solutions", [])
+                        if prev_items:
+                            resolved = resolve_correction(prompt_text, prev_items)
+                            if resolved:
+                                rw_conn2 = db.get_connection()
+                                try:
+                                    from memory.scope import resolve_scope as _rs
+                                    _scope = _rs(payload.get("cwd", "")) if payload.get("cwd") else "__global__"
+                                    success = apply_correction(rw_conn2, resolved, session_id, _scope)
+                                    if success:
+                                        correction_msg = (
+                                            f"\n\n## Memory Corrected\n"
+                                            f"- Superseded: `{resolved['old_item_id'][:12]}...`\n"
+                                            f"- New fact: {resolved['new_text']}\n"
+                                        )
+                                        print(f"[memory] Correction applied: superseded {resolved['old_item_id'][:12]}", file=sys.stderr)
+                                finally:
+                                    rw_conn2.close()
+        except Exception as exc:
+            print(f"[memory] Correction detection failed: {exc}", file=sys.stderr)
+
+        additional_context, truncation_stats = recall.format_prompt_context(context)
+    if not additional_context and not correction_msg:
         sys.exit(0)
 
-    print(json.dumps({"additionalContext": additional_context}))
+    output_context = (additional_context or "") + correction_msg
+    print(json.dumps({"additionalContext": output_context}))
 
     n_facts = len(context.get("facts", []))
     n_rels = len(context.get("relationships", []))
@@ -250,6 +309,8 @@ def main(payload: dict) -> None:
         parts[0] += f", {n_guards} guardrails"
     if entities_hit:
         parts[0] += f" (entities: {', '.join(entities_hit[:5])})"
+    if truncation_stats.get("truncated", 0) > 0:
+        parts[0] += f" [truncated {truncation_stats['truncated']} items]"
     print(parts[0], file=sys.stderr)
 
 

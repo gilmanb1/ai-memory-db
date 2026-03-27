@@ -116,6 +116,10 @@ FACT_CATEGORIES = [
 # ── Outcome scoring (Feature 3) ──────────────────────────────────────
 RECALL_UTILITY_WEIGHT   = True           # use recall_utility in retrieval scoring
 
+# ── Correction detection ──────────────────────────────────────────────
+CORRECTION_DETECTION_ENABLED = True
+CORRECTION_LLM_FOR_AMBIGUOUS = True   # call LLM for ambiguous corrections (future)
+
 # ── Prefetching (Feature 4) ─────────────────────────────────────────
 PREFETCH_ENABLED        = True
 PREFETCH_MAX_AGE_S      = 120.0          # prefetch cache TTL in seconds

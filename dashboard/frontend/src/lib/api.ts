@@ -1,3 +1,5 @@
+import type { KnowledgeGraphData, ChatMessage } from "./types";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9111";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -153,6 +155,12 @@ export const api = {
   search: (data: { query: string; types?: string[]; scope?: string; limit?: number }) =>
     request<any>("/api/v1/search", { method: "POST", body: JSON.stringify(data) }),
 
+  // Knowledge Graph
+  getKnowledgeGraph: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request<KnowledgeGraphData>(`/api/v1/knowledge-graph${qs}`);
+  },
+
   // Code Graph
   getCodeGraphStats: () => request<any>("/api/v1/code-graph/stats"),
   getCodeGraphFiles: (params?: Record<string, string>) => {
@@ -170,3 +178,11 @@ export const api = {
   searchCodeSymbols: (q: string) =>
     request<any>(`/api/v1/code-graph/symbols/search?q=${encodeURIComponent(q)}`),
 };
+
+export function chatStream(data: { query: string; scope?: string; conversation_history?: ChatMessage[] }) {
+  return fetch(`${API_BASE}/api/v1/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}

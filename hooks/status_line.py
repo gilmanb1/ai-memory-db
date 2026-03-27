@@ -111,7 +111,7 @@ def main() -> None:
                             try:
                                 scope = resolve_scope(cwd)
                                 ctx = recall.prompt_recall(conn, query_emb, recent_summary, scope=scope)
-                                formatted = recall.format_prompt_context(ctx)
+                                formatted, _stats = recall.format_prompt_context(ctx)
                                 if formatted:
                                     save_prefetch(session_id, formatted, query_emb)
                             finally:

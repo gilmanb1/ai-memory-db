@@ -135,6 +135,8 @@ export interface GraphNode {
   label: string;
   entity_type: string;
   session_count: number;
+  degree: number;
+  cluster: string;
 }
 
 export interface GraphEdge {
@@ -144,6 +146,39 @@ export interface GraphEdge {
   rel_type: string;
   description: string;
   strength: number;
+}
+
+export interface KnowledgeNode {
+  id: string;
+  label: string;
+  node_type: "entity" | "fact" | "decision" | "observation" | "guardrail" | "procedure" | "error_solution" | "file";
+  size_metric: number;
+  metadata: Record<string, any>;
+  cluster: string | null;
+  scope: string;
+  degree: number;
+}
+
+export interface KnowledgeEdge {
+  id: string;
+  source: string;
+  target: string;
+  edge_type: string;
+  strength: number;
+  metadata: Record<string, any>;
+}
+
+export interface KnowledgeGraphData {
+  nodes: KnowledgeNode[];
+  edges: KnowledgeEdge[];
+  clusters: { id: string; label: string; node_count: number }[];
+  type_counts: Record<string, number>;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  sources?: { id: string; node_type: string; text: string; score?: number }[];
 }
 
 export interface SearchResult {

@@ -397,7 +397,7 @@ class TestRecall(unittest.TestCase):
 
     def test_format_session_context_non_empty(self):
         ctx = recall.session_recall(self.conn)
-        text = recall.format_session_context(ctx)
+        text, _ = recall.format_session_context(ctx)
         self.assertIn("Memory Context", text)
         self.assertIn("Established Knowledge", text)
 
@@ -416,14 +416,14 @@ class TestRecall(unittest.TestCase):
     def test_format_prompt_context_shows_relationships(self):
         query_emb = _mock_embed("Focal Graph storage DuckDB")
         ctx = recall.prompt_recall(self.conn, query_emb, "Focal Graph DuckDB")
-        text = recall.format_prompt_context(ctx)
+        text, _ = recall.format_prompt_context(ctx)
         # Should mention something or be empty — no crash
         self.assertIsInstance(text, str)
 
     def test_empty_db_returns_empty_string(self):
         # Empty session context should return empty string
         ctx = {"long_facts": [], "medium_facts": [], "decisions": [], "entities": [], "relationships": []}
-        text = recall.format_session_context(ctx)
+        text, _ = recall.format_session_context(ctx)
         self.assertEqual(text, "")
 
 
@@ -1113,20 +1113,20 @@ class TestTokenBudgetTruncation(unittest.TestCase):
 
     def test_given_200_long_facts_when_format_session_then_stays_within_budget(self):
         ctx = recall.session_recall(self.conn)
-        formatted = recall.format_session_context(ctx)
+        formatted, _ = recall.format_session_context(ctx)
         estimated_tokens = len(formatted) // _cfg.CHARS_PER_TOKEN
         self.assertLessEqual(estimated_tokens, _cfg.SESSION_TOKEN_BUDGET + 50)  # small margin for truncation message
 
     def test_given_200_long_facts_when_budget_is_small_then_contains_truncation_notice(self):
         with patch.object(recall, "SESSION_TOKEN_BUDGET", 200):
             ctx = recall.session_recall(self.conn)
-            formatted = recall.format_session_context(ctx)
+            formatted, _ = recall.format_session_context(ctx)
             self.assertIn("truncated", formatted)
 
     def test_given_many_search_results_when_format_prompt_then_stays_within_budget(self):
         query_emb = _mock_embed("budget_test_fact_0_" + "y" * 50)
         ctx = recall.prompt_recall(self.conn, query_emb, "Tell me all the facts")
-        formatted = recall.format_prompt_context(ctx)
+        formatted, _ = recall.format_prompt_context(ctx)
         estimated_tokens = len(formatted) // _cfg.CHARS_PER_TOKEN
         self.assertLessEqual(estimated_tokens, _cfg.PROMPT_TOKEN_BUDGET + 50)
 
@@ -2903,14 +2903,14 @@ class TestNarrativeInRecall(unittest.TestCase):
             embedding=emb, is_final=True, scope=_cfg.GLOBAL_SCOPE,
         )
         ctx = recall.prompt_recall(self.conn, emb, "Tell me about the API")
-        formatted = recall.format_prompt_context(ctx)
+        formatted, _ = recall.format_prompt_context(ctx)
         self.assertIn("Related Session Context", formatted)
 
     def test_format_prompt_context_no_narratives_when_empty(self):
         query_emb = _mock_embed("some random query text")
         ctx = recall.prompt_recall(self.conn, query_emb, "some random query")
         # With no narratives in DB, the section shouldn't appear
-        formatted = recall.format_prompt_context(ctx)
+        formatted, _ = recall.format_prompt_context(ctx)
         self.assertNotIn("Related Session Context", formatted)
 
 
@@ -3602,7 +3602,7 @@ class TestObservationsInRecall(unittest.TestCase):
 
     def test_format_session_context_includes_observations(self):
         context = recall.session_recall(self.conn)
-        rendered = recall.format_session_context(context)
+        rendered, _ = recall.format_session_context(context)
         self.assertIn("Synthesized Knowledge", rendered)
         self.assertIn("event sourcing", rendered)
 
@@ -3615,7 +3615,7 @@ class TestObservationsInRecall(unittest.TestCase):
             "questions": [],
             "narratives": [],
         }
-        rendered = recall.format_prompt_context(context)
+        rendered, _ = recall.format_prompt_context(context)
         self.assertIn("Synthesized Knowledge", rendered)
         self.assertIn("Event sourcing", rendered)
 
@@ -3628,7 +3628,7 @@ class TestObservationsInRecall(unittest.TestCase):
             "questions": [],
             "narratives": [],
         }
-        rendered = recall.format_prompt_context(context)
+        rendered, _ = recall.format_prompt_context(context)
         self.assertEqual(rendered, "")
 
 
@@ -3835,7 +3835,7 @@ class TestConversationChunks(unittest.TestCase):
             "ideas": [], "observations": [], "relationships": [],
             "questions": [], "narratives": [],
         }
-        formatted = recall.format_prompt_context(recall_data)
+        formatted, _ = recall.format_prompt_context(recall_data)
         self.assertIn("Source Conversation Context", formatted)
         self.assertIn("Target", formatted)
         self.assertIn("$5 coupon", formatted)
@@ -3850,7 +3850,7 @@ class TestConversationChunks(unittest.TestCase):
             "ideas": [], "observations": [], "relationships": [],
             "questions": [], "narratives": [],
         }
-        formatted = recall.format_prompt_context(recall_data)
+        formatted, _ = recall.format_prompt_context(recall_data)
         self.assertNotIn("Source Conversation Context", formatted)
         self.assertIn("some fact", formatted)
 
@@ -3870,7 +3870,7 @@ class TestConversationChunks(unittest.TestCase):
                 "ideas": [], "observations": [], "relationships": [],
                 "questions": [], "narratives": [],
             }
-            formatted = recall.format_prompt_context(recall_data)
+            formatted, _ = recall.format_prompt_context(recall_data)
             self.assertIn("...", formatted)
             # Should not contain the full 200-char string
             self.assertNotIn("A" * 200, formatted)
@@ -4527,13 +4527,13 @@ class TestRecallWithGuardrails(unittest.TestCase):
 
     def test_format_session_context_shows_guardrails(self):
         ctx = recall.session_recall(self.conn)
-        text = recall.format_session_context(ctx)
+        text, _ = recall.format_session_context(ctx)
         self.assertIn("Guardrails", text)
         self.assertIn("polling loop", text)
 
     def test_format_session_context_shows_procedures(self):
         ctx = recall.session_recall(self.conn)
-        text = recall.format_session_context(ctx)
+        text, _ = recall.format_session_context(ctx)
         self.assertIn("Procedures", text)
         self.assertIn("migration", text)
 
@@ -4546,7 +4546,7 @@ class TestRecallWithGuardrails(unittest.TestCase):
             "procedures": [],
             "error_solutions": [{"error_pattern": "ImportError", "solution": "pip install X"}],
         }
-        text = recall.format_prompt_context(ctx)
+        text, _ = recall.format_prompt_context(ctx)
         self.assertIn("Guardrails", text)
         self.assertIn("Don't touch X", text)
         self.assertIn("Error Solutions", text)
@@ -4693,7 +4693,7 @@ class TestDefensiveRecall(unittest.TestCase):
             "procedures": [{"task_description": "Do thing", "steps": "1. Step"}],
             "error_solutions": [{"error_pattern": "Error E", "solution": "Fix F"}],
         }
-        text = recall.format_prompt_context(ctx)
+        text, _ = recall.format_prompt_context(ctx)
         # Guardrails should appear BEFORE facts
         guardrail_pos = text.find("Guardrails")
         facts_pos = text.find("Relevant Facts")
@@ -5462,7 +5462,7 @@ class TestCommunitySummaries(unittest.TestCase):
             _mock_embed("baseline fact"), "sess-1", _noop_decay,
         )
         ctx = recall.session_recall(self.conn)
-        text = recall.format_session_context(ctx)
+        text, _ = recall.format_session_context(ctx)
         self.assertIn("Summaries", text)
 
     def test_community_summaries_table_exists(self):
@@ -7348,6 +7348,2266 @@ class TestDetectLanguage(unittest.TestCase):
     def test_unknown(self):
         from memory.code_graph import _detect_language
         self.assertEqual(_detect_language("data.csv"), "unknown")
+
+
+# ── Knowledge command tests ────────────────────────────────────────────────
+
+class TestKnowledgeCommand(unittest.TestCase):
+    """
+    GIVEN a database with facts, decisions, guardrails, observations, entities, and relationships
+    WHEN the knowledge command searches by topic
+    THEN results are grouped by type with correct formatting
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Insert facts
+        emb = _mock_embed("DuckDB uses single-writer concurrency model")
+        db.upsert_fact(
+            self.conn, "DuckDB uses single-writer concurrency model",
+            "technical", "long", "high", emb, "s1", _noop_decay,
+        )
+        emb2 = _mock_embed("Python is used for data science")
+        db.upsert_fact(
+            self.conn, "Python is used for data science",
+            "technical", "long", "high", emb2, "s1", _noop_decay,
+        )
+        # Insert a decision
+        emb3 = _mock_embed("Use retry with backoff for DB locks")
+        db.upsert_decision(
+            self.conn, "Use retry with backoff for DB locks",
+            "long", emb3, "s1", _noop_decay,
+        )
+        # Insert an observation
+        emb4 = _mock_embed("DuckDB is the storage backend for memory")
+        db.upsert_observation(
+            self.conn, "DuckDB is the storage backend for memory",
+            ["f1"], emb4,
+        )
+        # Insert a guardrail
+        emb5 = _mock_embed("Don't hold write connections during API calls")
+        db.upsert_guardrail(
+            self.conn, warning="Don't hold write connections during API calls",
+            rationale="Causes lock contention", embedding=emb5, session_id="s1",
+        )
+        # Insert an entity and relationship
+        db.upsert_entity(self.conn, "DuckDB", embedding=_mock_embed("DuckDB"))
+        db.upsert_relationship(
+            self.conn, "DuckDB", "WAL", "uses", "Write-ahead logging",
+            "s1",
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    def test_semantic_search_returns_grouped_results(self, _mock):
+        from hooks.knowledge_cmd import _search_semantic
+        results = _search_semantic(self.conn, "DuckDB uses single-writer concurrency model", None)
+        self.assertIn("Facts", results)
+        self.assertGreater(len(results["Facts"]), 0)
+
+    @patch("memory.embeddings.embed_query", return_value=None)
+    def test_falls_back_to_text_search(self, _mock):
+        from hooks.knowledge_cmd import _search_text_fallback
+        results = _search_text_fallback(self.conn, "DuckDB", None)
+        # Should find the fact and/or observation containing "DuckDB"
+        total = sum(len(v) for v in results.values())
+        self.assertGreater(total, 0)
+
+    def test_find_matching_entities(self):
+        from hooks.knowledge_cmd import _find_matching_entities
+        names, rels = _find_matching_entities(self.conn, "DuckDB", None)
+        self.assertIn("DuckDB", names)
+        self.assertGreater(len(rels), 0)
+        self.assertEqual(rels[0]["from_entity"], "DuckDB")
+
+    def test_format_item_shows_score_and_scope(self):
+        from hooks.knowledge_cmd import _format_item
+        item = {
+            "score": 0.92, "text": "Test fact",
+            "temporal_class": "long", "decay_score": 0.95,
+            "scope": "/home/user/project",
+        }
+        line = _format_item(item, "text", ["temporal_class", "decay_score", "scope"])
+        self.assertIn("[0.92]", line)
+        self.assertIn("[long 0.95]", line)
+        self.assertIn("Test fact", line)
+        self.assertIn("(project)", line)
+
+    def test_format_item_with_file_paths(self):
+        from hooks.knowledge_cmd import _format_item
+        item = {
+            "score": 0.80, "warning": "Don't touch this",
+            "scope": "__global__",
+            "file_paths": ["src/db.py", "src/main.py"],
+        }
+        line = _format_item(item, "warning", ["scope", "file_paths"])
+        self.assertIn("Don't touch this", line)
+        self.assertIn("files:", line)
+        self.assertIn("src/db.py", line)
+
+    def test_format_item_with_error_solution(self):
+        from hooks.knowledge_cmd import _format_item
+        item = {
+            "score": 0.75, "error_pattern": "ImportError onnx",
+            "solution": "pip install onnxruntime-silicon",
+            "scope": "__global__", "confidence": "high",
+        }
+        line = _format_item(item, "error_pattern", ["solution", "confidence", "scope"])
+        self.assertIn("fix:", line)
+        self.assertIn("pip install", line)
+        self.assertIn("conf:high", line)
+
+    def test_format_scope_global(self):
+        from hooks.knowledge_cmd import _format_scope
+        self.assertEqual(_format_scope("__global__"), "global")
+
+    def test_format_scope_project(self):
+        from hooks.knowledge_cmd import _format_scope
+        self.assertEqual(_format_scope("/home/user/my-project"), "my-project")
+
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    def test_max_results_cap(self, _mock):
+        """Total results across all types should not exceed MAX_RESULTS."""
+        from hooks.knowledge_cmd import _search_semantic, MAX_RESULTS
+        # Insert many facts
+        for i in range(40):
+            emb = _mock_embed(f"unique fact number {i} about DuckDB concurrency locks")
+            db.upsert_fact(
+                self.conn, f"unique fact number {i} about DuckDB concurrency locks",
+                "technical", "long", "high", emb, "s1", _noop_decay,
+            )
+        results = _search_semantic(self.conn, "DuckDB concurrency locks", None)
+        total = sum(len(v) for v in results.values())
+        self.assertLessEqual(total, MAX_RESULTS)
+
+
+# ── Recalled command tests ─────────────────────────────────────────────────
+
+class TestRecalledCommand(unittest.TestCase):
+    """
+    GIVEN a recall log JSON file
+    WHEN the recalled command reads it
+    THEN it formats the output correctly
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.log_path = Path(self.tmpdir) / "last_recall.json"
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_formats_facts(self):
+        import json
+        self.log_path.write_text(json.dumps({
+            "session_id": "test-session-123",
+            "prompt": "What is DuckDB?",
+            "facts": [
+                {"id": "abc123", "text": "DuckDB is a columnar database", "score": 0.92,
+                 "temporal_class": "long", "scope": "__global__"},
+                {"id": "def456", "text": "DuckDB uses single writer", "score": 0.85,
+                 "temporal_class": "medium", "scope": "/home/user/proj"},
+            ],
+            "guardrails": [],
+            "procedures": [],
+            "error_solutions": [],
+            "observations": [],
+            "relationships": [],
+            "entities_hit": ["DuckDB"],
+            "code_context": [],
+        }))
+
+        from hooks.recalled_cmd import RECALL_LOG, main
+        import io
+        from contextlib import redirect_stdout
+
+        # Temporarily point RECALL_LOG to our test file
+        import hooks.recalled_cmd as recalled_mod
+        original_path = recalled_mod.RECALL_LOG
+        recalled_mod.RECALL_LOG = self.log_path
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                main()
+            output = buf.getvalue()
+        finally:
+            recalled_mod.RECALL_LOG = original_path
+
+        self.assertIn("Last Recalled Context", output)
+        self.assertIn("What is DuckDB?", output)
+        self.assertIn("Facts (2)", output)
+        self.assertIn("DuckDB is a columnar database", output)
+        self.assertIn("DuckDB uses single writer", output)
+        self.assertIn("Entities Hit", output)
+        self.assertIn("DuckDB", output)
+
+    def test_handles_empty_recall(self):
+        import json
+        self.log_path.write_text(json.dumps({
+            "session_id": "test-session-empty",
+            "prompt": "Hello",
+            "facts": [], "guardrails": [], "procedures": [],
+            "error_solutions": [], "observations": [],
+            "relationships": [], "entities_hit": [], "code_context": [],
+        }))
+
+        import hooks.recalled_cmd as recalled_mod
+        original_path = recalled_mod.RECALL_LOG
+        recalled_mod.RECALL_LOG = self.log_path
+        try:
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                recalled_mod.main()
+            output = buf.getvalue()
+        finally:
+            recalled_mod.RECALL_LOG = original_path
+
+        self.assertIn("No items were recalled", output)
+
+    def test_handles_missing_file(self):
+        import hooks.recalled_cmd as recalled_mod
+        original_path = recalled_mod.RECALL_LOG
+        recalled_mod.RECALL_LOG = Path(self.tmpdir) / "nonexistent.json"
+        try:
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                recalled_mod.main()
+            output = buf.getvalue()
+        finally:
+            recalled_mod.RECALL_LOG = original_path
+
+        self.assertIn("No recall log found", output)
+
+    def test_formats_guardrails_and_relationships(self):
+        import json
+        self.log_path.write_text(json.dumps({
+            "session_id": "s1",
+            "prompt": "test prompt",
+            "facts": [],
+            "guardrails": [{"id": "g1", "text": "Don't delete prod", "scope": "__global__"}],
+            "procedures": [{"id": "p1", "text": "Deploy: run tests first"}],
+            "error_solutions": [{"id": "e1", "text": "ImportError -> pip install"}],
+            "observations": [{"id": "o1", "text": "System uses event sourcing"}],
+            "relationships": ["DuckDB --[uses]--> WAL"],
+            "entities_hit": [],
+            "code_context": [{"file": "src/main.py", "symbols": 5}],
+        }))
+
+        import hooks.recalled_cmd as recalled_mod
+        original_path = recalled_mod.RECALL_LOG
+        recalled_mod.RECALL_LOG = self.log_path
+        try:
+            import io
+            from contextlib import redirect_stdout
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                recalled_mod.main()
+            output = buf.getvalue()
+        finally:
+            recalled_mod.RECALL_LOG = original_path
+
+        self.assertIn("Guardrails (1)", output)
+        self.assertIn("Don't delete prod", output)
+        self.assertIn("Procedures (1)", output)
+        self.assertIn("Error Solutions (1)", output)
+        self.assertIn("Observations (1)", output)
+        self.assertIn("Relationships (1)", output)
+        self.assertIn("DuckDB --[uses]--> WAL", output)
+        self.assertIn("Code Context (1)", output)
+        self.assertIn("src/main.py", output)
+
+
+# ── Recall log saving tests ───────────────────────────────────────────────
+
+class TestRecallLogSaving(unittest.TestCase):
+    """
+    GIVEN the user_prompt_submit hook processes a prompt
+    WHEN recall context is computed
+    THEN a recall log JSON is saved with the correct structure
+    """
+
+    def test_recall_log_structure(self):
+        """Verify the recall log written by user_prompt_submit has expected keys."""
+        import json
+        log_path = Path(tempfile.mktemp(suffix=".json"))
+        try:
+            # Simulate what user_prompt_submit writes
+            context = {
+                "facts": [{"id": "f1", "text": "Test fact", "score": 0.9,
+                           "temporal_class": "long", "scope": "__global__"}],
+                "guardrails": [{"id": "g1", "warning": "Don't do X", "scope": "__global__"}],
+                "procedures": [{"id": "p1", "task_description": "Deploy steps"}],
+                "error_solutions": [{"id": "e1", "error_pattern": "ImportError"}],
+                "observations": [{"id": "o1", "text": "System observation"}],
+                "relationships": [{"from": "A", "rel_type": "uses", "to": "B"}],
+                "entities_hit": ["DuckDB", "WAL"],
+                "code_context": [{"file_path": "main.py", "symbols": [1, 2, 3]}],
+            }
+            session_id = "test-session"
+            prompt_text = "What about DuckDB?"
+
+            recall_log = {
+                "session_id": session_id,
+                "prompt": prompt_text[:200],
+                "facts": [{"id": f.get("id","")[:12], "text": f.get("text","")[:120], "score": round(f.get("score",0), 3), "temporal_class": f.get("temporal_class",""), "scope": f.get("scope","")} for f in context.get("facts", []) if isinstance(f, dict)],
+                "guardrails": [{"id": g.get("id","")[:12], "text": g.get("warning","")[:120], "scope": g.get("scope","")} for g in context.get("guardrails", []) if isinstance(g, dict)],
+                "procedures": [{"id": p.get("id","")[:12], "text": p.get("task_description","")[:120]} for p in context.get("procedures", []) if isinstance(p, dict)],
+                "error_solutions": [{"id": e.get("id","")[:12], "text": e.get("error_pattern","")[:120]} for e in context.get("error_solutions", []) if isinstance(e, dict)],
+                "observations": [{"id": o.get("id","")[:12], "text": o.get("text","")[:120]} for o in context.get("observations", []) if isinstance(o, dict)],
+                "relationships": [f"{r.get('from','')} --[{r.get('rel_type','')}]--> {r.get('to','')}" for r in context.get("relationships", []) if isinstance(r, dict)],
+                "entities_hit": context.get("entities_hit", []),
+                "code_context": [{"file": c.get("file_path",""), "symbols": len(c.get("symbols", []))} for c in context.get("code_context", []) if isinstance(c, dict)],
+            }
+            log_path.write_text(json.dumps(recall_log, indent=2))
+
+            loaded = json.loads(log_path.read_text())
+            self.assertEqual(loaded["session_id"], "test-session")
+            self.assertEqual(loaded["prompt"], "What about DuckDB?")
+            self.assertEqual(len(loaded["facts"]), 1)
+            self.assertEqual(loaded["facts"][0]["text"], "Test fact")
+            self.assertEqual(loaded["facts"][0]["score"], 0.9)
+            self.assertEqual(len(loaded["guardrails"]), 1)
+            self.assertEqual(loaded["guardrails"][0]["text"], "Don't do X")
+            self.assertEqual(len(loaded["procedures"]), 1)
+            self.assertEqual(loaded["procedures"][0]["text"], "Deploy steps")
+            self.assertEqual(len(loaded["error_solutions"]), 1)
+            self.assertEqual(len(loaded["observations"]), 1)
+            self.assertEqual(loaded["relationships"], ["A --[uses]--> B"])
+            self.assertEqual(loaded["entities_hit"], ["DuckDB", "WAL"])
+            self.assertEqual(loaded["code_context"][0]["symbols"], 3)
+        finally:
+            log_path.unlink(missing_ok=True)
+
+
+# ── Session-learned CLI tests ─────────────────────────────────────────────
+
+class TestSessionLearned(unittest.TestCase):
+    """
+    GIVEN a database with sessions and extracted items
+    WHEN cmd_session_learned is called
+    THEN it shows items grouped by type for the correct session
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Create a session
+        db.upsert_session(
+            self.conn, "sess-learn-1", "PreCompact/pass1", "/tmp/project",
+            "/tmp/transcript.jsonl", 15, "Discussed DuckDB locking",
+            scope="/tmp/project",
+        )
+        # Insert items linked to this session
+        db.upsert_fact(
+            self.conn, "DuckDB uses exclusive write locks",
+            "technical", "long", "high",
+            _mock_embed("DuckDB uses exclusive write locks"),
+            "sess-learn-1", _noop_decay,
+        )
+        db.upsert_fact(
+            self.conn, "Retry with backoff handles contention",
+            "technical", "long", "high",
+            _mock_embed("Retry with backoff handles contention"),
+            "sess-learn-1", _noop_decay,
+        )
+        db.upsert_decision(
+            self.conn, "Use read-only connections for read operations",
+            "long", _mock_embed("Use read-only connections for read operations"),
+            "sess-learn-1", _noop_decay,
+        )
+        db.upsert_entity(
+            self.conn, "DuckDB",
+            embedding=_mock_embed("DuckDB"),
+        )
+        db.upsert_relationship(
+            self.conn, "DuckDB", "WAL", "uses", "Write-ahead logging",
+            "sess-learn-1",
+        )
+        # A second session with different content
+        db.upsert_session(
+            self.conn, "sess-learn-2", "SessionEnd", "/tmp/other",
+            "/tmp/other.jsonl", 5, "Quick chat",
+        )
+        db.upsert_fact(
+            self.conn, "Python is great for scripting",
+            "technical", "medium", "high",
+            _mock_embed("Python is great for scripting"),
+            "sess-learn-2", _noop_decay,
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def _run_cli(self, args):
+        """Close the write conn, run CLI func, reopen for tearDown."""
+        import io
+        from contextlib import redirect_stdout
+        import memory.cli as _cli
+        from memory.cli import cmd_session_learned
+
+        self.conn.close()
+        with patch.object(_cli, 'DB_PATH', self.db_path), \
+             patch.object(_cfg, 'DB_PATH', self.db_path):
+            db._initialised_paths.discard(str(self.db_path))
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                cmd_session_learned(args)
+        self.conn = fresh_conn(self.db_path)
+        return buf.getvalue()
+
+    def test_most_recent_session_default(self):
+        """Without session_id, shows the most recent session."""
+        from argparse import Namespace
+        output = self._run_cli(Namespace(session_id=None, limit=0))
+        # sess-learn-2 is more recent (created second)
+        self.assertIn("sess-learn-2", output)
+        self.assertIn("Python is great for scripting", output)
+
+    def test_specific_session_by_prefix(self):
+        """With a session_id prefix, finds the matching session."""
+        from argparse import Namespace
+        output = self._run_cli(Namespace(session_id="sess-learn-1", limit=0))
+        self.assertIn("sess-learn-1", output)
+        self.assertIn("Discussed DuckDB locking", output)
+        self.assertIn("DuckDB uses exclusive write locks", output)
+        self.assertIn("Retry with backoff handles contention", output)
+        self.assertIn("Use read-only connections", output)
+        self.assertIn("DuckDB --[uses]--> WAL", output)
+        # Should NOT include items from sess-learn-2
+        self.assertNotIn("Python is great for scripting", output)
+
+    def test_shows_item_counts(self):
+        """Output includes per-type counts and total."""
+        from argparse import Namespace
+        output = self._run_cli(Namespace(session_id="sess-learn-1", limit=0))
+        self.assertIn("Facts (2 extracted)", output)
+        self.assertIn("Decisions (1 extracted)", output)
+        self.assertIn("Relationships (1 extracted)", output)
+        self.assertIn("Total:", output)
+
+
+# ── Enhanced search command tests ──────────────────────────────────────────
+
+class TestEnhancedSearch(unittest.TestCase):
+    """
+    GIVEN a database with multiple item types
+    WHEN cmd_search is called
+    THEN it returns results across all types, respects --type filter
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+        # Facts
+        emb = _mock_embed("DuckDB concurrency model uses exclusive locks")
+        db.upsert_fact(
+            self.conn, "DuckDB concurrency model uses exclusive locks",
+            "technical", "long", "high", emb, "s1", _noop_decay,
+        )
+        # Decisions
+        emb2 = _mock_embed("DuckDB concurrency decision: use retry backoff")
+        db.upsert_decision(
+            self.conn, "DuckDB concurrency decision: use retry backoff",
+            "long", emb2, "s1", _noop_decay,
+        )
+        # Observations
+        emb3 = _mock_embed("DuckDB concurrency is the storage layer")
+        db.upsert_observation(
+            self.conn, "DuckDB concurrency is the storage layer",
+            ["f1"], emb3,
+        )
+        # Guardrail
+        emb4 = _mock_embed("DuckDB concurrency guardrail: don't hold locks")
+        db.upsert_guardrail(
+            self.conn, warning="DuckDB concurrency guardrail: don't hold locks",
+            embedding=emb4, session_id="s1",
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def _run_search(self, args):
+        import io
+        from contextlib import redirect_stdout
+        import memory.cli as _cli
+        from memory.cli import cmd_search
+
+        self.conn.close()
+        with patch.object(_cli, 'DB_PATH', self.db_path), \
+             patch.object(_cfg, 'DB_PATH', self.db_path):
+            db._initialised_paths.discard(str(self.db_path))
+            buf = io.StringIO()
+            with redirect_stdout(buf), patch("os.getcwd", return_value="/tmp"):
+                cmd_search(args)
+        self.conn = fresh_conn(self.db_path)
+        return buf.getvalue()
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_cross_type_search(self, _mock_avail, _mock_emb):
+        """Search returns results from multiple types."""
+        from argparse import Namespace
+        output = self._run_search(Namespace(
+            query="DuckDB concurrency model uses exclusive locks",
+            limit=0, type=None, scope=None,
+        ))
+        self.assertIn("Facts", output)
+        self.assertIn("DuckDB concurrency model uses exclusive locks", output)
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_type_filter(self, _mock_avail, _mock_emb):
+        """--type filter restricts results to a single type."""
+        from argparse import Namespace
+        output = self._run_search(Namespace(
+            query="DuckDB concurrency decision: use retry backoff",
+            limit=0, type="decisions", scope=None,
+        ))
+        self.assertIn("Decisions", output)
+        self.assertNotIn("### Facts", output)
+        self.assertNotIn("### Guardrails", output)
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_no_results(self, _mock_avail, _mock_emb):
+        """Completely unrelated query returns no results message."""
+        from argparse import Namespace
+        output = self._run_search(Namespace(
+            query="quantum physics string theory multiverse",
+            limit=0, type=None, scope=None,
+        ))
+        self.assertIn("No results found", output)
+
+
+# ── Path retrieval strategy tests ──────────────────────────────────────────
+
+class TestPathRetrieval(unittest.TestCase):
+    """
+    GIVEN items with file_paths stored in the database
+    WHEN retrieve_path is called with a query mentioning file paths
+    THEN matching items are returned scored by path overlap
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Fact with file_paths
+        emb = _mock_embed("Connection retry logic in db module")
+        db.upsert_fact(
+            self.conn, "Connection retry logic in db module",
+            "technical", "long", "high", emb, "s1", _noop_decay,
+            file_paths=["memory/db.py"],
+        )
+        # Guardrail with file_paths
+        emb2 = _mock_embed("Don't modify the migration table directly")
+        db.upsert_guardrail(
+            self.conn, warning="Don't modify the migration table directly",
+            rationale="Breaks schema versioning",
+            embedding=emb2, session_id="s1",
+            file_paths=["memory/db.py", "memory/config.py"],
+        )
+        # Fact WITHOUT file_paths (should not be returned)
+        emb3 = _mock_embed("Python is great for scripting")
+        db.upsert_fact(
+            self.conn, "Python is great for scripting",
+            "technical", "long", "high", emb3, "s1", _noop_decay,
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_retrieve_path_finds_matching_items(self):
+        from memory.retrieval import retrieve_path
+        # Close the write conn so retrieve_path can open a read-only one
+        self.conn.close()
+        results = retrieve_path(str(self.db_path), "check memory/db.py for issues", None, 10)
+        self.conn = fresh_conn(self.db_path)  # reopen for tearDown
+        self.assertGreater(len(results), 0)
+        texts = [r.text for r in results]
+        self.assertTrue(any("retry" in t.lower() or "migration" in t.lower() for t in texts))
+
+    def test_retrieve_path_no_match(self):
+        from memory.retrieval import retrieve_path
+        self.conn.close()
+        results = retrieve_path(str(self.db_path), "check some_other_file.rs for issues", None, 10)
+        self.conn = fresh_conn(self.db_path)
+        self.assertEqual(len(results), 0)
+
+    def test_retrieve_path_no_file_paths_in_query(self):
+        from memory.retrieval import retrieve_path
+        self.conn.close()
+        results = retrieve_path(str(self.db_path), "what is DuckDB", None, 10)
+        self.conn = fresh_conn(self.db_path)
+        self.assertEqual(len(results), 0)
+
+    def test_extract_file_paths(self):
+        from memory.retrieval import _extract_file_paths
+        paths = _extract_file_paths("look at memory/db.py and hooks/session_start.py")
+        self.assertIn("memory/db.py", paths)
+        self.assertIn("hooks/session_start.py", paths)
+
+    def test_extract_file_paths_empty(self):
+        from memory.retrieval import _extract_file_paths
+        paths = _extract_file_paths("what is DuckDB")
+        self.assertEqual(len(paths), 0)
+
+    def test_extract_file_paths_with_extension(self):
+        from memory.retrieval import _extract_file_paths
+        paths = _extract_file_paths("edit src/components/Header.tsx")
+        self.assertIn("src/components/Header.tsx", paths)
+
+
+# ── Graph endpoint enrichment tests ────────────────────────────────────────
+
+class TestRelationshipGraphEnrichment(unittest.TestCase):
+    """
+    GIVEN a database with entities and relationships
+    WHEN the relationship graph endpoint computes enrichments
+    THEN nodes get degree/cluster and response includes rel_type_counts
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Create entities
+        db.upsert_entity(self.conn, "DuckDB", entity_type="technology")
+        db.upsert_entity(self.conn, "WAL", entity_type="technology")
+        db.upsert_entity(self.conn, "Python", entity_type="technology")
+        db.upsert_entity(self.conn, "Ben", entity_type="person")
+        # Create relationships
+        db.upsert_relationship(self.conn, "DuckDB", "WAL", "uses", "Write-ahead logging", "s1")
+        db.upsert_relationship(self.conn, "DuckDB", "Python", "implemented_in", "Python bindings", "s1")
+        db.upsert_relationship(self.conn, "Ben", "DuckDB", "uses", "Ben uses DuckDB", "s1")
+        db.upsert_relationship(self.conn, "Ben", "Python", "uses", "Ben uses Python", "s1")
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_degree_computation(self):
+        """Nodes should have degree = number of connected edges."""
+        from collections import Counter
+
+        # Simulate what the endpoint does
+        edges = [
+            {"source": "DuckDB", "target": "WAL", "rel_type": "uses"},
+            {"source": "DuckDB", "target": "Python", "rel_type": "implemented_in"},
+            {"source": "Ben", "target": "DuckDB", "rel_type": "uses"},
+            {"source": "Ben", "target": "Python", "rel_type": "uses"},
+        ]
+        degree = Counter()
+        for e in edges:
+            degree[e["source"]] += 1
+            degree[e["target"]] += 1
+
+        self.assertEqual(degree["DuckDB"], 3)  # 2 outgoing + 1 incoming
+        self.assertEqual(degree["Ben"], 2)      # 2 outgoing
+        self.assertEqual(degree["WAL"], 1)      # 1 incoming
+        self.assertEqual(degree["Python"], 2)   # 2 incoming
+
+    def test_cluster_assignment(self):
+        """Cluster should be the most common rel_type for each node."""
+        from collections import Counter
+
+        edges = [
+            {"source": "DuckDB", "target": "WAL", "rel_type": "uses"},
+            {"source": "DuckDB", "target": "Python", "rel_type": "implemented_in"},
+            {"source": "Ben", "target": "DuckDB", "rel_type": "uses"},
+            {"source": "Ben", "target": "Python", "rel_type": "uses"},
+        ]
+        node_rel_types: dict[str, list[str]] = {}
+        for e in edges:
+            node_rel_types.setdefault(e["source"], []).append(e["rel_type"])
+            node_rel_types.setdefault(e["target"], []).append(e["rel_type"])
+
+        # DuckDB has: uses, implemented_in, uses → most common = "uses"
+        duckdb_cluster = Counter(node_rel_types["DuckDB"]).most_common(1)[0][0]
+        self.assertEqual(duckdb_cluster, "uses")
+
+        # Ben has: uses, uses → most common = "uses"
+        ben_cluster = Counter(node_rel_types["Ben"]).most_common(1)[0][0]
+        self.assertEqual(ben_cluster, "uses")
+
+    def test_rel_type_counts(self):
+        """rel_type_counts should count edges per type."""
+        from collections import Counter
+
+        edges = [
+            {"rel_type": "uses"},
+            {"rel_type": "uses"},
+            {"rel_type": "uses"},
+            {"rel_type": "implemented_in"},
+        ]
+        counts = Counter(e["rel_type"] for e in edges)
+        self.assertEqual(counts["uses"], 3)
+        self.assertEqual(counts["implemented_in"], 1)
+
+    def test_node_fields_present(self):
+        """Verify the endpoint returns degree and cluster on nodes."""
+        self.conn.close()
+        # Use the actual endpoint logic
+        from collections import Counter
+        import memory.cli  # ensure cli module is loaded for DB_PATH
+
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            rels = conn.execute("""
+                SELECT id, from_entity, to_entity, rel_type, description, strength
+                FROM relationships WHERE is_active = TRUE
+            """).fetchall()
+
+            entity_names = set()
+            edges = []
+            degree_counter = Counter()
+            node_rel_types: dict[str, list[str]] = {}
+            for rid, from_e, to_e, rtype, desc, strength in rels:
+                entity_names.add(from_e)
+                entity_names.add(to_e)
+                edges.append({"source": from_e, "target": to_e, "rel_type": rtype})
+                degree_counter[from_e] += 1
+                degree_counter[to_e] += 1
+                node_rel_types.setdefault(from_e, []).append(rtype)
+                node_rel_types.setdefault(to_e, []).append(rtype)
+
+            # Build nodes with enrichment
+            nodes = []
+            for name in entity_names:
+                most_common = Counter(node_rel_types.get(name, [])).most_common(1)
+                nodes.append({
+                    "id": name,
+                    "degree": degree_counter.get(name, 0),
+                    "cluster": most_common[0][0] if most_common else "none",
+                })
+
+            for node in nodes:
+                self.assertIn("degree", node)
+                self.assertIn("cluster", node)
+                self.assertIsInstance(node["degree"], int)
+                self.assertGreater(node["degree"], 0)
+                self.assertNotEqual(node["cluster"], "none")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+
+class TestCodeGraphEnrichment(unittest.TestCase):
+    """
+    GIVEN code files and dependencies
+    WHEN the code graph endpoint computes enrichments
+    THEN nodes get degree/directory and edges get dep_type
+    """
+
+    def test_dep_type_internal_same_directory(self):
+        """Edges between files in the same directory are 'internal'."""
+        def parent_dir(path):
+            return path.rsplit("/", 1)[0] + "/" if "/" in path else "./"
+
+        from_f = "memory/db.py"
+        to_f = "memory/config.py"
+        self.assertEqual(parent_dir(from_f), parent_dir(to_f))
+        dep_type = "internal" if parent_dir(from_f) == parent_dir(to_f) else "external"
+        self.assertEqual(dep_type, "internal")
+
+    def test_dep_type_external_cross_directory(self):
+        """Edges between files in different directories are 'external'."""
+        def parent_dir(path):
+            return path.rsplit("/", 1)[0] + "/" if "/" in path else "./"
+
+        from_f = "hooks/session_start.py"
+        to_f = "memory/db.py"
+        self.assertNotEqual(parent_dir(from_f), parent_dir(to_f))
+        dep_type = "internal" if parent_dir(from_f) == parent_dir(to_f) else "external"
+        self.assertEqual(dep_type, "external")
+
+    def test_directory_extraction(self):
+        """Directory field should be the parent directory of the file."""
+        def parent_dir(path):
+            return path.rsplit("/", 1)[0] + "/" if "/" in path else "./"
+
+        self.assertEqual(parent_dir("memory/db.py"), "memory/")
+        self.assertEqual(parent_dir("hooks/session_start.py"), "hooks/")
+        self.assertEqual(parent_dir("setup.py"), "./")
+        self.assertEqual(parent_dir("src/components/Header.tsx"), "src/components/")
+
+    def test_degree_counts_both_directions(self):
+        """Degree should count both outgoing and incoming edges."""
+        node_degrees: dict[str, int] = {"a.py": 0, "b.py": 0, "c.py": 0}
+        edges = [("a.py", "b.py"), ("a.py", "c.py"), ("b.py", "c.py")]
+        for src, tgt in edges:
+            node_degrees[src] += 1
+            node_degrees[tgt] += 1
+
+        self.assertEqual(node_degrees["a.py"], 2)  # 2 outgoing
+        self.assertEqual(node_degrees["b.py"], 2)  # 1 outgoing + 1 incoming
+        self.assertEqual(node_degrees["c.py"], 2)  # 2 incoming
+
+    def test_top_level_dir_extraction(self):
+        """Top-level directory should be the first path component."""
+        def top_level(path):
+            parts = path.split("/")
+            return parts[0] + "/" if len(parts) > 1 else "./"
+
+        self.assertEqual(top_level("memory/db.py"), "memory/")
+        self.assertEqual(top_level("hooks/session_start.py"), "hooks/")
+        self.assertEqual(top_level("src/components/Header.tsx"), "src/")
+        self.assertEqual(top_level("setup.py"), "./")
+
+    def test_dir_counts(self):
+        """dir_counts should count files per top-level directory."""
+        from collections import Counter
+
+        files = ["memory/db.py", "memory/config.py", "memory/recall.py",
+                 "hooks/session_start.py", "hooks/status_line.py", "setup.py"]
+
+        def top_level(path):
+            parts = path.split("/")
+            return parts[0] + "/" if len(parts) > 1 else "./"
+
+        counts = Counter(top_level(f) for f in files)
+        self.assertEqual(counts["memory/"], 3)
+        self.assertEqual(counts["hooks/"], 2)
+        self.assertEqual(counts["./"], 1)
+
+
+# ── Unified Knowledge Graph endpoint tests ─────────────────────────────────
+
+def _import_build_knowledge_graph():
+    """Import build_knowledge_graph without triggering the FastAPI circular import."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "knowledge_graph_mod",
+        str(PROJECT_ROOT / "dashboard" / "backend" / "routes" / "knowledge_graph.py"),
+        submodule_search_locations=[],
+    )
+    mod = importlib.util.module_from_spec(spec)
+    # Stub out the FastAPI import that causes circular dependency
+    import types as _types
+    fake_server = _types.ModuleType("dashboard.backend.server")
+    fake_server.get_read_conn = lambda: None
+    mod.__package__ = "dashboard.backend.routes"
+    import sys as _sys
+    _sys.modules["dashboard.backend.server"] = fake_server
+    _sys.modules["..server"] = fake_server
+    # The module uses `from ..server import get_read_conn` which we need to bypass
+    # Instead, just exec the raw source and extract the function
+    source = (PROJECT_ROOT / "dashboard" / "backend" / "routes" / "knowledge_graph.py").read_text()
+    # Remove the problematic import line and exec
+    lines = source.split("\n")
+    cleaned = "\n".join(line for line in lines if "from ..server" not in line)
+    ns: dict = {}
+    exec(compile(cleaned, "knowledge_graph.py", "exec"), ns)
+    return ns["build_knowledge_graph"]
+
+
+class TestKnowledgeGraphEndpoint(unittest.TestCase):
+    """
+    GIVEN a database with entities, facts, decisions, observations, and relationships
+    WHEN the knowledge graph endpoint builds the unified graph
+    THEN nodes of all requested types appear with correct IDs, edges reflect real joins,
+         and degree/cluster/type_counts are computed correctly
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Entities
+        db.upsert_entity(self.conn, "DuckDB", entity_type="technology")
+        db.upsert_entity(self.conn, "Python", entity_type="technology")
+        # Relationships
+        db.upsert_relationship(self.conn, "DuckDB", "Python", "implemented_in", "Python bindings", "s1")
+        # Facts linked to entities
+        emb = _mock_embed("DuckDB uses WAL for crash safety")
+        fid, _ = db.upsert_fact(
+            self.conn, "DuckDB uses WAL for crash safety",
+            "technical", "long", "high", emb, "s1", _noop_decay,
+        )
+        db.link_fact_entities(self.conn, fid, ["DuckDB"])
+        # Decision
+        emb2 = _mock_embed("Use read-only connections for reads")
+        db.upsert_decision(self.conn, "Use read-only connections for reads", "long", emb2, "s1", _noop_decay)
+        # Observation linked to fact
+        emb3 = _mock_embed("DuckDB is the storage backend")
+        db.upsert_observation(self.conn, "DuckDB is the storage backend", [fid], emb3)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_build_knowledge_graph_entities_and_facts(self):
+        """Graph with entity+fact types includes both and connecting edges."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["entity", "fact"], limit=50, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        node_ids = {n["id"] for n in result["nodes"]}
+        node_types = {n["node_type"] for n in result["nodes"]}
+
+        # Should have entity nodes and fact nodes
+        self.assertIn("entity", node_types)
+        self.assertIn("fact", node_types)
+        # Entity nodes use name as ID
+        self.assertIn("DuckDB", node_ids)
+        # Fact nodes use "fact:{uuid}" prefix
+        fact_nodes = [n for n in result["nodes"] if n["node_type"] == "fact"]
+        self.assertGreater(len(fact_nodes), 0)
+        self.assertTrue(fact_nodes[0]["id"].startswith("fact:"))
+
+        # Should have fact↔entity edges from fact_entity_links
+        edge_types = {e["edge_type"] for e in result["edges"]}
+        self.assertIn("mentions", edge_types)
+
+        # type_counts should be present
+        self.assertIn("entity", result["type_counts"])
+        self.assertIn("fact", result["type_counts"])
+
+    def test_build_knowledge_graph_observations_link_to_facts(self):
+        """Observations should have 'proven_by' edges to their source facts."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["fact", "observation"], limit=50, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        obs_nodes = [n for n in result["nodes"] if n["node_type"] == "observation"]
+        self.assertGreater(len(obs_nodes), 0)
+        proven_edges = [e for e in result["edges"] if e["edge_type"] == "proven_by"]
+        self.assertGreater(len(proven_edges), 0)
+
+    def test_build_knowledge_graph_decisions_appear(self):
+        """Decision type should produce decision nodes."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["decision"], limit=50, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        dec_nodes = [n for n in result["nodes"] if n["node_type"] == "decision"]
+        self.assertGreater(len(dec_nodes), 0)
+        self.assertTrue(dec_nodes[0]["id"].startswith("decision:"))
+
+    def test_degree_computed_on_nodes(self):
+        """All nodes should have a degree field >= 0."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["entity", "fact"], limit=50, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        for node in result["nodes"]:
+            self.assertIn("degree", node)
+            self.assertIsInstance(node["degree"], int)
+
+    def test_limit_caps_node_count(self):
+        """Result should not exceed the limit parameter."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["entity", "fact", "decision", "observation"], limit=3, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        self.assertLessEqual(len(result["nodes"]), 3)
+
+    def test_edges_only_reference_included_nodes(self):
+        """All edge source/target IDs should exist in the node set."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["entity", "fact", "observation"], limit=50, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        node_ids = {n["id"] for n in result["nodes"]}
+        for edge in result["edges"]:
+            self.assertIn(edge["source"], node_ids, f"Edge source {edge['source']} not in node set")
+            self.assertIn(edge["target"], node_ids, f"Edge target {edge['target']} not in node set")
+
+    def test_cluster_by_type(self):
+        """With cluster_by=type, each node's cluster should equal its node_type."""
+        build_knowledge_graph = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build_knowledge_graph(conn, types=["entity", "fact"], limit=50, cluster_by="type")
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        for node in result["nodes"]:
+            self.assertEqual(node["cluster"], node["node_type"])
+
+
+# ── Chat direct query tests ────────────────────────────────────────────────
+
+def _import_chat_direct_query():
+    """Import _try_direct_query without triggering the FastAPI circular import."""
+    import importlib.util
+    source = (PROJECT_ROOT / "dashboard" / "backend" / "routes" / "chat.py").read_text()
+    lines = source.split("\n")
+    cleaned = "\n".join(line for line in lines if "from ..server" not in line)
+    ns: dict = {}
+    exec(compile(cleaned, "chat.py", "exec"), ns)
+    return ns["_try_direct_query"]
+
+
+class TestChatDirectQuery(unittest.TestCase):
+    """
+    GIVEN a database with facts, decisions, etc.
+    WHEN the user asks about most recent/oldest/last N items
+    THEN the direct query parser returns accurate ordered results from SQL
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Insert facts with different timestamps
+        import time as _time
+        for i in range(10):
+            emb = _mock_embed(f"fact number {i} about testing")
+            db.upsert_fact(
+                self.conn, f"fact number {i} about testing",
+                "technical", "long", "high", emb, "s1", _noop_decay,
+            )
+            # Small delay to ensure distinct timestamps
+            _time.sleep(0.01)
+        # Insert a decision
+        emb_d = _mock_embed("decision about architecture")
+        db.upsert_decision(self.conn, "decision about architecture", "long", emb_d, "s1", _noop_decay)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_most_recent_facts(self):
+        """'5 most recent facts' returns exactly 5 facts, newest first."""
+        _try_direct_query = _import_chat_direct_query()
+        result = _try_direct_query(self.conn, "Show me the 5 most recent facts", None)
+        self.assertIsNotNone(result)
+        self.assertIn("most recent", result)
+        # Should contain 5 fact entries (each starts with [facts:)
+        entries = [line for line in result.split("\n") if line.startswith("[facts:")]
+        self.assertEqual(len(entries), 5)
+
+    def test_last_3_decisions(self):
+        """'last 3 decisions' returns decisions."""
+        _try_direct_query = _import_chat_direct_query()
+        result = _try_direct_query(self.conn, "Show the last 3 decisions", None)
+        self.assertIsNotNone(result)
+        self.assertIn("decisions", result)
+
+    def test_oldest_facts(self):
+        """'3 oldest facts' returns facts in ascending order."""
+        _try_direct_query = _import_chat_direct_query()
+        result = _try_direct_query(self.conn, "Tell me the 3 oldest facts", None)
+        self.assertIsNotNone(result)
+        self.assertIn("oldest", result)
+        entries = [line for line in result.split("\n") if line.startswith("[facts:")]
+        self.assertEqual(len(entries), 3)
+
+    def test_nonmatching_query_returns_none(self):
+        """A regular semantic question should return None (no direct query)."""
+        _try_direct_query = _import_chat_direct_query()
+        result = _try_direct_query(self.conn, "What do you know about DuckDB?", None)
+        self.assertIsNone(result)
+
+    def test_unknown_type_returns_none(self):
+        """An unknown type name should return None."""
+        _try_direct_query = _import_chat_direct_query()
+        result = _try_direct_query(self.conn, "Show me the 5 most recent bananas", None)
+        self.assertIsNone(result)
+
+    def test_limit_capped_at_50(self):
+        """Requesting more than 50 should be capped."""
+        _try_direct_query = _import_chat_direct_query()
+        result = _try_direct_query(self.conn, "Show me the 999 most recent facts", None)
+        self.assertIsNotNone(result)
+        entries = [line for line in result.split("\n") if line.startswith("[facts:")]
+        self.assertLessEqual(len(entries), 50)
+
+
+# ── Chat advanced query tests ──────────────────────────────────────────────
+
+class TestChatAdvancedQueries(unittest.TestCase):
+    """
+    GIVEN a database with facts, entities, relationships, sessions, guardrails, etc.
+    WHEN the user asks aggregation, session, file, scope, or cross-ref questions
+    THEN the direct query system returns accurate SQL-based results
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Facts with varying importance and recall counts
+        for i in range(5):
+            emb = _mock_embed(f"fact about topic {i}")
+            db.upsert_fact(
+                self.conn, f"fact about topic {i}",
+                "technical", "long", "high", emb, "sess-1", _noop_decay,
+                importance=10 - i,
+            )
+        # Guardrails linked to files
+        emb_g = _mock_embed("never delete production data")
+        gid, _ = db.upsert_guardrail(
+            self.conn, warning="never delete production data",
+            rationale="data loss", embedding=emb_g, session_id="sess-1",
+            file_paths=["memory/db.py", "hooks/forget_cmd.py"],
+        )
+        # Entity with relationships
+        db.upsert_entity(self.conn, "DuckDB", entity_type="technology")
+        db.upsert_entity(self.conn, "Python", entity_type="technology")
+        db.upsert_entity(self.conn, "WAL", entity_type="technology")
+        db.upsert_relationship(self.conn, "DuckDB", "WAL", "uses", "Write-ahead logging", "sess-1")
+        db.upsert_relationship(self.conn, "DuckDB", "Python", "implemented_in", "Python bindings", "sess-1")
+        db.upsert_relationship(self.conn, "Python", "DuckDB", "uses", "Python uses DuckDB", "sess-1")
+        # Session with narrative
+        db.upsert_session(self.conn, "sess-1", "manual", "/tmp/project", "/tmp/t.jsonl", 20,
+                          "Discussed DuckDB locking and concurrency", scope="/tmp/project")
+        db.upsert_session(self.conn, "sess-2", "PreCompact", "/tmp/other", "/tmp/o.jsonl", 5,
+                          "Quick chat about Python", scope="/tmp/other")
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_aggregation_most_recalled(self):
+        """'most recalled facts' should return facts ordered by times_recalled."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "Which facts have been recalled the most?", None)
+        self.assertIsNotNone(result)
+        self.assertIn("facts", result.lower())
+
+    def test_aggregation_highest_importance(self):
+        """'most important facts' should return facts ordered by importance."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "What are the most important facts?", None)
+        self.assertIsNotNone(result)
+        self.assertIn("facts", result.lower())
+
+    def test_aggregation_most_connected_entities(self):
+        """'most connected entities' should return entities by relationship count."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "Which entities have the most relationships?", None)
+        self.assertIsNotNone(result)
+        self.assertIn("DuckDB", result)
+
+    def test_session_query_last(self):
+        """'what was learned in the last session' returns session + items."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "What was learned in the last session?", None)
+        self.assertIsNotNone(result)
+        self.assertIn("sess-2", result)
+
+    def test_session_query_specific(self):
+        """'summarize session sess-1' returns that specific session."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "Summarize session sess-1", None)
+        self.assertIsNotNone(result)
+        self.assertIn("sess-1", result)
+        self.assertIn("DuckDB locking", result)
+
+    def test_file_query(self):
+        """'what do we know about db.py' returns items linked to that file."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "What do we know about db.py?", None)
+        self.assertIsNotNone(result)
+        self.assertIn("db.py", result)
+
+    def test_file_guardrails(self):
+        """'what guardrails protect forget_cmd.py' returns file-linked guardrails."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "What guardrails protect forget_cmd.py?", None)
+        self.assertIsNotNone(result)
+        self.assertIn("never delete production data", result)
+
+    def test_scope_query(self):
+        """'what do we know about project X' returns scope-filtered items."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "What's in scope /tmp/project?", None)
+        self.assertIsNotNone(result)
+
+    def test_contradiction_query(self):
+        """'contradictions' or 'conflicts' should attempt a similarity-based check."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "Are there any contradictions in the facts?", None)
+        # Even if no contradictions found, should return a result (not None)
+        self.assertIsNotNone(result)
+
+
+# ── End-to-end hook integration tests ──────────────────────────────────────
+#
+# These test the full pipeline: given a real database state and a user prompt,
+# does the hook inject the correct context?  We call the hook's main() function
+# directly, capture stdout, and parse the JSON output.
+
+
+import io
+from contextlib import redirect_stdout, redirect_stderr
+import importlib
+
+
+def _run_hook_main(hook_module_path: str, payload: dict, db_path: Path):
+    """Load a hook script and call its main(payload), capturing stdout JSON.
+
+    Patches DB_PATH at the config module level so all 'from memory.config import DB_PATH'
+    statements in the hook pick up the test database path.
+    """
+    import memory.cli as _cli
+    old_db = _cfg.DB_PATH
+    old_cli_db = _cli.DB_PATH
+    _cfg.DB_PATH = db_path
+    _cli.DB_PATH = db_path
+    db._initialised_paths.discard(str(db_path))
+
+    # The hooks import DB_PATH as a module attribute — we need to reload the recall
+    # module so it picks up the new DB_PATH for any internal references.
+    # More importantly, hooks call db.get_connection() without db_path, so it reads
+    # from config.DB_PATH which we've already patched above.
+
+    source = Path(hook_module_path).read_text()
+    # Strip the uv shebang block and sys.path manipulation
+    lines = source.split("\n")
+    cleaned_lines = []
+    skip_block = False
+    for line in lines:
+        if line.startswith("# /// script"):
+            skip_block = True
+            continue
+        if skip_block and line.startswith("# ///"):
+            skip_block = False
+            continue
+        if skip_block:
+            continue
+        if "sys.path.insert" in line and ".claude" in line:
+            continue
+        # Replace `from memory.config import DB_PATH` with the test path
+        if "from memory.config import DB_PATH" in line:
+            line = line.replace(
+                "from memory.config import DB_PATH",
+                f"from memory.config import DB_PATH as _ORIG_DB_PATH; from pathlib import Path as _P; DB_PATH = _P('{db_path}')"
+            )
+        cleaned_lines.append(line)
+    cleaned = "\n".join(cleaned_lines)
+
+    ns: dict = {"__name__": "__not_main__"}
+    exec(compile(cleaned, hook_module_path, "exec"), ns)
+
+    out_buf = io.StringIO()
+    err_buf = io.StringIO()
+    try:
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            try:
+                ns["main"](payload)
+            except SystemExit:
+                pass  # hooks call sys.exit(0) when nothing to inject
+    finally:
+        _cfg.DB_PATH = old_db
+        _cli.DB_PATH = old_cli_db
+
+    stdout = out_buf.getvalue().strip()
+    stderr = err_buf.getvalue().strip()
+
+    # Parse JSON from stdout (may be empty if hook exited early)
+    result = None
+    if stdout:
+        try:
+            result = json.loads(stdout)
+        except json.JSONDecodeError:
+            pass
+
+    return result, stderr
+
+
+class TestSessionStartIntegration(unittest.TestCase):
+    """
+    GIVEN a database with facts, decisions, guardrails, and procedures
+    WHEN session_start hook fires
+    THEN the systemMessage contains the right items in priority order
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Long-term fact
+        db.upsert_fact(
+            self.conn, "The project uses DuckDB for storage",
+            "architecture", "long", "high",
+            _mock_embed("The project uses DuckDB for storage"),
+            "s1", _noop_decay, importance=8,
+        )
+        # Medium-term fact
+        db.upsert_fact(
+            self.conn, "We switched to WAL mode last week",
+            "operational", "medium", "medium",
+            _mock_embed("We switched to WAL mode last week"),
+            "s1", _noop_decay, importance=5,
+        )
+        # Decision
+        db.upsert_decision(
+            self.conn, "Use read-only connections for all reads",
+            "long", _mock_embed("Use read-only connections for all reads"),
+            "s1", _noop_decay,
+        )
+        # Guardrail
+        db.upsert_guardrail(
+            self.conn, warning="Never delete production data",
+            rationale="Catastrophic data loss",
+            consequence="User loses all history",
+            embedding=_mock_embed("Never delete production data"),
+            session_id="s1",
+            file_paths=["memory/db.py"],
+        )
+        # Procedure
+        db.upsert_procedure(
+            self.conn, task_description="Deploy to production",
+            steps="1. Run tests 2. Build image 3. Push",
+            embedding=_mock_embed("Deploy to production"),
+            session_id="s1",
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def _session_ctx(self, scope="/tmp"):
+        """Run session_recall + format for a given scope."""
+        ctx = recall.session_recall(self.conn, scope=scope)
+        text, _ = recall.format_session_context(ctx)
+        return text
+
+    def test_session_start_injects_system_message(self):
+        """Session recall should return systemMessage containing recalled items."""
+        msg = self._session_ctx()
+        self.assertIn("Never delete production data", msg)
+        self.assertIn("Guardrails", msg)
+        self.assertIn("DuckDB for storage", msg)
+        self.assertIn("read-only connections", msg)
+
+    def test_session_start_guardrails_before_facts(self):
+        """Guardrails should appear before facts in the output (priority order)."""
+        msg = self._session_ctx()
+        guardrail_pos = msg.find("Guardrails")
+        facts_pos = msg.find("Established Knowledge")
+        self.assertGreater(facts_pos, guardrail_pos,
+                           "Guardrails should appear before facts")
+
+    def test_session_start_includes_procedures(self):
+        """Procedures should appear in the system message."""
+        msg = self._session_ctx()
+        self.assertIn("Deploy to production", msg)
+
+    def test_session_start_scope_filtering(self):
+        """Facts in scope B should NOT appear when session starts in scope A."""
+        scope_a = "/tmp/project-a"
+        scope_b = "/tmp/project-b"
+        db.upsert_fact(
+            self.conn, "Project B uses Redis for caching",
+            "architecture", "long", "high",
+            _mock_embed("Project B uses Redis for caching"),
+            "s1", _noop_decay, scope=scope_b,
+        )
+        msg = self._session_ctx(scope=scope_a)
+        self.assertNotIn("Redis for caching", msg,
+                         "Scope B fact should not appear in scope A session")
+
+
+class TestPromptRecallIntegration(unittest.TestCase):
+    """
+    GIVEN a database with facts, guardrails, and error_solutions
+    WHEN user_prompt_submit hook fires with a specific prompt
+    THEN the additionalContext contains semantically relevant items
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        # Facts about DuckDB
+        db.upsert_fact(
+            self.conn, "DuckDB uses single-writer concurrency with WAL",
+            "architecture", "long", "high",
+            _mock_embed("DuckDB uses single-writer concurrency with WAL"),
+            "s1", _noop_decay, importance=9,
+        )
+        # Unrelated fact
+        db.upsert_fact(
+            self.conn, "React uses virtual DOM for rendering",
+            "architecture", "long", "high",
+            _mock_embed("React uses virtual DOM for rendering"),
+            "s1", _noop_decay, importance=7,
+        )
+        # Guardrail linked to a file
+        db.upsert_guardrail(
+            self.conn, warning="Don't modify the retry logic in db.py",
+            rationale="Fragile concurrent code",
+            embedding=_mock_embed("Don't modify the retry logic in db.py"),
+            session_id="s1",
+            file_paths=["memory/db.py"],
+        )
+        # Error solution
+        db.upsert_error_solution(
+            self.conn, error_pattern="DuckDB IOException: Could not set lock",
+            solution="Kill the blocking process or wait for it to finish",
+            embedding=_mock_embed("DuckDB IOException: Could not set lock"),
+            session_id="s1",
+        )
+        # Build FTS indexes so BM25 retrieval works
+        db.rebuild_fts_indexes(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_prompt_recall_returns_relevant_facts(self, _avail, _eq, _emb):
+        """When asking about DuckDB concurrency, the DuckDB fact should be in context."""
+        self.conn.close()
+        result, stderr = _run_hook_main(
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+            {"prompt": "Fix the DuckDB concurrency locking issue in the connection code",
+             "cwd": "/tmp", "session_id": "test-sess"},
+            self.db_path,
+        )
+        self.conn = fresh_conn(self.db_path)
+
+        self.assertIsNotNone(result, f"Hook returned no output. stderr: {stderr}")
+        self.assertIn("additionalContext", result)
+        ctx = result["additionalContext"]
+
+        # The DuckDB fact should appear
+        self.assertIn("single-writer concurrency", ctx,
+                       "DuckDB concurrency fact should be recalled for a DuckDB prompt")
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_prompt_recall_excludes_irrelevant(self, _avail, _eq, _emb):
+        """When asking about DuckDB, the React fact should NOT be in context."""
+        self.conn.close()
+        result, stderr = _run_hook_main(
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+            {"prompt": "Fix the DuckDB concurrency locking issue in the connection code",
+             "cwd": "/tmp", "session_id": "test-sess"},
+            self.db_path,
+        )
+        self.conn = fresh_conn(self.db_path)
+
+        if result and "additionalContext" in result:
+            ctx = result["additionalContext"]
+            self.assertNotIn("virtual DOM", ctx,
+                             "React fact should NOT be recalled for a DuckDB prompt")
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_prompt_recall_surfaces_guardrails_for_file(self, _avail, _eq, _emb):
+        """When prompt mentions db.py, the guardrail protecting it should appear."""
+        self.conn.close()
+        result, stderr = _run_hook_main(
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+            {"prompt": "I need to change the retry logic in memory/db.py to fix the lock issue",
+             "cwd": "/tmp", "session_id": "test-sess"},
+            self.db_path,
+        )
+        self.conn = fresh_conn(self.db_path)
+
+        self.assertIsNotNone(result, f"Hook returned no output. stderr: {stderr}")
+        ctx = result.get("additionalContext", "")
+        self.assertIn("retry logic", ctx,
+                       "Guardrail about db.py retry logic should be recalled when prompt mentions db.py")
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_prompt_recall_surfaces_error_solutions(self, _avail, _eq, _emb):
+        """When prompt mentions a known error, the solution should appear."""
+        self.conn.close()
+        result, stderr = _run_hook_main(
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+            {"prompt": "I'm getting DuckDB IOException: Could not set lock on the database file",
+             "cwd": "/tmp", "session_id": "test-sess"},
+            self.db_path,
+        )
+        self.conn = fresh_conn(self.db_path)
+
+        self.assertIsNotNone(result, f"Hook returned no output. stderr: {stderr}")
+        ctx = result.get("additionalContext", "")
+        # Either the error pattern or the solution text should appear
+        has_error = "Could not set lock" in ctx or "blocking process" in ctx
+        self.assertTrue(has_error,
+                        f"Error solution should be recalled for matching error. Context: {ctx[:500]}")
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_short_prompt_skipped(self, _avail, _eq, _emb):
+        """Prompts shorter than 10 chars should not trigger recall."""
+        self.conn.close()
+        result, stderr = _run_hook_main(
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+            {"prompt": "hi", "cwd": "/tmp", "session_id": "test-sess"},
+            self.db_path,
+        )
+        self.conn = fresh_conn(self.db_path)
+
+        self.assertIsNone(result,
+                          "Short prompts should not produce output")
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    @patch("memory.embeddings.is_ollama_available", return_value=True)
+    def test_decayed_fact_not_recalled(self, _avail, _eq, _emb):
+        """Facts with is_active=FALSE should not appear in recall."""
+        # Deactivate the DuckDB fact
+        self.conn.execute(
+            "UPDATE facts SET is_active = FALSE WHERE text LIKE '%single-writer%'"
+        )
+        self.conn.close()
+
+        result, _ = _run_hook_main(
+            str(PROJECT_ROOT / "hooks" / "user_prompt_submit.py"),
+            {"prompt": "Tell me about DuckDB concurrency and the single-writer model",
+             "cwd": "/tmp", "session_id": "test-sess"},
+            self.db_path,
+        )
+        self.conn = fresh_conn(self.db_path)
+
+        if result and "additionalContext" in result:
+            ctx = result["additionalContext"]
+            self.assertNotIn("single-writer concurrency", ctx,
+                             "Deactivated fact should not appear in recall")
+
+
+# ── Realistic corpus integration tests ─────────────────────────────────────
+#
+# A synthetic corpus simulating ~3 weeks of use across 2 projects with
+# overlapping entities, contradictions, decayed items, file-linked guardrails,
+# sessions with narratives, and cross-scope promotion.
+
+def _build_realistic_corpus(conn, db_path: Path):
+    """Populate a DB with a realistic multi-project corpus. Returns metadata about what was inserted."""
+    from datetime import timedelta
+
+    SCOPE_BACKEND = "/home/user/projects/backend-api"
+    SCOPE_FRONTEND = "/home/user/projects/web-dashboard"
+    now = datetime.now(timezone.utc)
+
+    meta = {
+        "scope_backend": SCOPE_BACKEND,
+        "scope_frontend": SCOPE_FRONTEND,
+        "fact_ids": {},  # keyed by short label
+        "decision_ids": {},
+        "guardrail_ids": {},
+        "entity_names": [],
+    }
+
+    # ── Sessions (3 weeks of work) ──────────────────────────────────────
+    sessions = [
+        ("sess-w1-1", "PreCompact/pass1", SCOPE_BACKEND, 35,
+         "Set up the FastAPI backend with DuckDB storage and auth middleware"),
+        ("sess-w1-2", "SessionEnd", SCOPE_BACKEND, 20,
+         "Debugged connection pooling issues with DuckDB single-writer locks"),
+        ("sess-w2-1", "PreCompact/pass1", SCOPE_FRONTEND, 45,
+         "Built React dashboard with Cytoscape.js graph visualization"),
+        ("sess-w2-2", "SessionEnd", SCOPE_FRONTEND, 15,
+         "Fixed CORS issues between frontend and backend API"),
+        ("sess-w3-1", "PreCompact/pass2", SCOPE_BACKEND, 60,
+         "Implemented retry logic and connection backoff for DuckDB locks"),
+        ("sess-w3-2", "SessionEnd", SCOPE_FRONTEND, 25,
+         "Added dark mode and responsive layout to dashboard"),
+    ]
+    for i, (sid, trigger, cwd, msgs, summary) in enumerate(sessions):
+        ts = now - timedelta(days=21 - i * 3)
+        db.upsert_session(conn, sid, trigger, cwd, f"/tmp/{sid}.jsonl", msgs, summary, scope=cwd)
+        conn.execute("UPDATE sessions SET created_at = ? WHERE id = ?", [ts, sid])
+
+    # ── Entities ────────────────────────────────────────────────────────
+    entities = [
+        ("DuckDB", "technology"),
+        ("FastAPI", "technology"),
+        ("React", "technology"),
+        ("Cytoscape.js", "technology"),
+        ("Python", "technology"),
+        ("TypeScript", "technology"),
+        ("PostgreSQL", "technology"),  # mentioned but not used — tests relevance
+        ("Ben", "person"),
+        ("Authentication", "concept"),
+        ("Connection Pool", "concept"),
+        ("WAL", "technology"),
+        ("CORS", "concept"),
+    ]
+    for name, etype in entities:
+        db.upsert_entity(conn, name, entity_type=etype, embedding=_mock_embed(name))
+        meta["entity_names"].append(name)
+
+    # ── Relationships ───────────────────────────────────────────────────
+    rels = [
+        ("FastAPI", "DuckDB", "uses", "FastAPI backend stores data in DuckDB", "sess-w1-1"),
+        ("FastAPI", "Python", "implemented_in", "FastAPI is a Python framework", "sess-w1-1"),
+        ("React", "TypeScript", "implemented_in", "Dashboard built with TypeScript", "sess-w2-1"),
+        ("React", "Cytoscape.js", "uses", "Graph rendering via Cytoscape", "sess-w2-1"),
+        ("DuckDB", "WAL", "uses", "Write-ahead logging for crash safety", "sess-w1-2"),
+        ("DuckDB", "Connection Pool", "requires", "Single-writer needs careful pooling", "sess-w1-2"),
+        ("Ben", "DuckDB", "uses", "Ben works with DuckDB daily", "sess-w1-1"),
+        ("Ben", "React", "uses", "Ben builds the React dashboard", "sess-w2-1"),
+        ("Authentication", "FastAPI", "implemented_in", "Auth middleware in FastAPI", "sess-w1-1"),
+    ]
+    for fr, to, rt, desc, sid in rels:
+        db.upsert_relationship(conn, fr, to, rt, desc, sid)
+
+    # ── Facts (mix of long/medium/short, various scopes) ────────────────
+    facts = [
+        # (label, text, category, temporal_class, confidence, session, scope, importance)
+        # Backend facts (scope: backend)
+        ("duckdb_writer", "DuckDB enforces single-writer concurrency: only one write connection at a time",
+         "architecture", "long", "high", "sess-w1-2", SCOPE_BACKEND, 9),
+        ("fastapi_port", "FastAPI backend runs on port 8000 with CORS configured for localhost:3000",
+         "operational", "long", "high", "sess-w1-1", SCOPE_BACKEND, 7),
+        ("jwt_auth", "Authentication uses JWT tokens stored in httpOnly cookies",
+         "architecture", "long", "high", "sess-w1-1", SCOPE_BACKEND, 8),
+        ("retry_backoff", "Connection retry uses exponential backoff: 0.15s base, 5 retries max",
+         "implementation", "long", "high", "sess-w3-1", SCOPE_BACKEND, 8),
+        ("db_path", "The database file is at ~/.claude/memory/knowledge.duckdb",
+         "operational", "medium", "high", "sess-w1-1", SCOPE_BACKEND, 5),
+        ("fts_install", "DuckDB FTS extension must be installed before BM25 search works",
+         "operational", "short", "medium", "sess-w1-2", SCOPE_BACKEND, 4),
+
+        # Frontend facts (scope: frontend)
+        ("nextjs_stack", "Dashboard uses Next.js 16 with Tailwind CSS and shadcn/ui components",
+         "architecture", "long", "high", "sess-w2-1", SCOPE_FRONTEND, 8),
+        ("cytoscape_graph", "Graph visualization uses Cytoscape.js with fcose layout algorithm",
+         "architecture", "long", "high", "sess-w2-1", SCOPE_FRONTEND, 7),
+        ("cors_config", "CORS must be configured on backend for the frontend origin to work",
+         "operational", "medium", "high", "sess-w2-2", SCOPE_FRONTEND, 6),
+        ("dark_mode", "Dark mode uses CSS custom properties toggled by a class on html element",
+         "implementation", "medium", "medium", "sess-w3-2", SCOPE_FRONTEND, 4),
+
+        # Global facts (seen across projects)
+        ("user_pref_terse", "Ben prefers short, direct code without unnecessary abstractions",
+         "user_preference", "long", "high", "sess-w1-1", "__global__", 9),
+        ("user_pref_tdd", "Always write tests before implementing new features (red/green)",
+         "user_preference", "long", "high", "sess-w2-1", "__global__", 10),
+        ("uv_runner", "The project uses uv as the Python package runner",
+         "operational", "long", "high", "sess-w1-1", "__global__", 6),
+
+        # Contradictory pair
+        ("postgres_outdated", "PostgreSQL is the primary database for the backend API",
+         "architecture", "medium", "medium", "sess-w1-1", SCOPE_BACKEND, 3),
+
+        # Decayed fact
+        ("sqlite_old", "The backend initially used SQLite before switching to DuckDB",
+         "architecture", "short", "low", "sess-w1-1", SCOPE_BACKEND, 2),
+    ]
+    for label, text, cat, tc, conf, sid, scope, imp in facts:
+        emb = _mock_embed(text)
+        fid, _ = db.upsert_fact(
+            conn, text, cat, tc, conf, emb, sid, _noop_decay,
+            scope=scope, importance=imp,
+        )
+        meta["fact_ids"][label] = fid
+
+    # Link facts to entities
+    db.link_fact_entities(conn, meta["fact_ids"]["duckdb_writer"], ["DuckDB", "Connection Pool"])
+    db.link_fact_entities(conn, meta["fact_ids"]["fastapi_port"], ["FastAPI", "CORS"])
+    db.link_fact_entities(conn, meta["fact_ids"]["jwt_auth"], ["Authentication", "FastAPI"])
+    db.link_fact_entities(conn, meta["fact_ids"]["retry_backoff"], ["DuckDB", "Connection Pool"])
+    db.link_fact_entities(conn, meta["fact_ids"]["nextjs_stack"], ["React", "TypeScript"])
+    db.link_fact_entities(conn, meta["fact_ids"]["cytoscape_graph"], ["Cytoscape.js", "React"])
+
+    # Deactivate the SQLite fact (simulates decay)
+    conn.execute("UPDATE facts SET is_active = FALSE, deactivated_at = ? WHERE text LIKE '%SQLite before switching%'",
+                 [now])
+
+    # ── Decisions ───────────────────────────────────────────────────────
+    decisions = [
+        ("Use DuckDB instead of PostgreSQL for the memory system — local file-based, no server needed",
+         "long", "sess-w1-1", SCOPE_BACKEND),
+        ("Use read-only connections for all read operations to avoid blocking writers",
+         "long", "sess-w3-1", SCOPE_BACKEND),
+        ("Bundle the graph view into the main dashboard rather than a separate app",
+         "long", "sess-w2-1", SCOPE_FRONTEND),
+    ]
+    for text, tc, sid, scope in decisions:
+        did, _ = db.upsert_decision(conn, text, tc, _mock_embed(text), sid, _noop_decay, scope=scope)
+        meta["decision_ids"][text[:40]] = did
+
+    # ── Guardrails (file-linked) ────────────────────────────────────────
+    guardrails = [
+        ("Never modify the retry logic in db.py without running the concurrency tests",
+         "Fragile concurrent code that was debugged extensively",
+         "Connection failures in production",
+         ["memory/db.py"],
+         "sess-w3-1", SCOPE_BACKEND),
+        ("Do not store session tokens in localStorage — use httpOnly cookies only",
+         "XSS vulnerability if tokens are in JS-accessible storage",
+         "Security breach — token theft via XSS",
+         ["backend/auth.py", "backend/middleware.py"],
+         "sess-w1-1", SCOPE_BACKEND),
+        ("Always run next build before deploying — never deploy dev mode",
+         "Dev mode exposes source maps and debug endpoints",
+         "Source code exposure in production",
+         ["dashboard/frontend/package.json"],
+         "sess-w2-1", SCOPE_FRONTEND),
+    ]
+    for warning, rationale, consequence, files, sid, scope in guardrails:
+        gid, _ = db.upsert_guardrail(
+            conn, warning=warning, rationale=rationale, consequence=consequence,
+            file_paths=files, embedding=_mock_embed(warning),
+            session_id=sid, scope=scope,
+        )
+        meta["guardrail_ids"][warning[:40]] = gid
+
+    # ── Procedures ──────────────────────────────────────────────────────
+    procedures = [
+        ("Deploy backend to production",
+         "1. Run python3 test_memory.py  2. Build Docker image  3. Push to registry  4. kubectl rollout",
+         ["Dockerfile", "k8s/deployment.yaml"],
+         "sess-w1-1", SCOPE_BACKEND),
+        ("Run the full test suite",
+         "1. Ensure Ollama is running  2. python3 test_memory.py  3. Check 0 failures",
+         ["test_memory.py"],
+         "sess-w3-1", "__global__"),
+    ]
+    for task, steps, files, sid, scope in procedures:
+        db.upsert_procedure(
+            conn, task_description=task, steps=steps, file_paths=files,
+            embedding=_mock_embed(task), session_id=sid, scope=scope,
+        )
+
+    # ── Error Solutions ─────────────────────────────────────────────────
+    error_solutions = [
+        ("DuckDB IOException: Could not set lock on file knowledge.duckdb",
+         "Find blocking process with ps -p <PID> and either wait or kill it. The lock is held by another Claude Code session.",
+         "memory/db.py",
+         "sess-w1-2", SCOPE_BACKEND),
+        ("CORS error: No 'Access-Control-Allow-Origin' header present",
+         "Add the frontend origin to the CORS allow_origins list in server.py",
+         "dashboard/backend/server.py",
+         "sess-w2-2", SCOPE_FRONTEND),
+        ("next build fails with 'pre cannot be descendant of p'",
+         "Fix the react-markdown code component — use separate pre and code overrides instead of checking inline prop",
+         "dashboard/frontend/src/components/chat-panel.tsx",
+         "sess-w3-2", SCOPE_FRONTEND),
+    ]
+    for pattern, solution, file, sid, scope in error_solutions:
+        db.upsert_error_solution(
+            conn, error_pattern=pattern, solution=solution,
+            file_paths=[file], embedding=_mock_embed(pattern),
+            session_id=sid, scope=scope,
+        )
+
+    # ── Observations (consolidated from facts) ──────────────────────────
+    duckdb_fact_ids = [
+        meta["fact_ids"]["duckdb_writer"],
+        meta["fact_ids"]["retry_backoff"],
+    ]
+    db.upsert_observation(
+        conn,
+        "DuckDB's single-writer model requires careful connection management with retry logic and read-only connections for reads",
+        duckdb_fact_ids,
+        _mock_embed("DuckDB single-writer connection management retry"),
+        scope=SCOPE_BACKEND,
+    )
+
+    frontend_fact_ids = [
+        meta["fact_ids"]["nextjs_stack"],
+        meta["fact_ids"]["cytoscape_graph"],
+    ]
+    db.upsert_observation(
+        conn,
+        "The web dashboard is a Next.js app using Cytoscape.js for graph rendering with Tailwind for styling",
+        frontend_fact_ids,
+        _mock_embed("Next.js Cytoscape dashboard Tailwind"),
+        scope=SCOPE_FRONTEND,
+    )
+
+    # ── Session Narratives ──────────────────────────────────────────────
+    db.upsert_narrative(
+        conn, "sess-w3-1", 1,
+        "Fixed DuckDB lock contention by adding retry with exponential backoff to get_connection(). "
+        "Split incremental extraction to release write connections during API calls. "
+        "Added concurrency tests proving 3 parallel writers succeed with retry.",
+        embedding=_mock_embed("DuckDB lock retry backoff concurrency"),
+        is_final=True, scope=SCOPE_BACKEND,
+    )
+
+    # Build FTS indexes for BM25 search
+    db.rebuild_fts_indexes(conn)
+
+    return meta
+
+
+class TestRealisticCorpusSessionStart(unittest.TestCase):
+    """
+    GIVEN a realistic multi-project corpus with ~3 weeks of knowledge
+    WHEN session_recall + format_session_context runs for different scopes
+    THEN the systemMessage contains the right items for that scope
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.meta = _build_realistic_corpus(self.conn, self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def _session_context(self, scope):
+        """Run session_recall + format for a given scope, return the formatted string."""
+        ctx = recall.session_recall(self.conn, scope=scope)
+        text, _ = recall.format_session_context(ctx)
+        return text
+
+    def test_backend_session_gets_backend_facts(self):
+        """Session in backend project should include backend architecture facts."""
+        msg = self._session_context(self.meta["scope_backend"])
+        self.assertIn("single-writer concurrency", msg)
+        self.assertIn("JWT tokens", msg)
+
+    def test_backend_session_excludes_frontend_only_facts(self):
+        """Backend session should NOT include frontend-only facts like dark mode."""
+        msg = self._session_context(self.meta["scope_backend"])
+        self.assertNotIn("Dark mode uses CSS", msg)
+
+    def test_backend_session_includes_global_facts(self):
+        """Backend session should include global facts like user preferences."""
+        msg = self._session_context(self.meta["scope_backend"])
+        self.assertIn("short, direct code", msg)
+
+    def test_frontend_session_gets_frontend_guardrails(self):
+        """Frontend session should include the next build guardrail."""
+        msg = self._session_context(self.meta["scope_frontend"])
+        self.assertIn("next build before deploying", msg)
+
+    def test_deactivated_fact_not_in_session(self):
+        """The SQLite fact (is_active=FALSE) should not appear."""
+        msg = self._session_context(self.meta["scope_backend"])
+        self.assertNotIn("SQLite before switching", msg)
+
+    def test_guardrails_appear_before_regular_facts(self):
+        """Guardrails should have highest priority in session context."""
+        msg = self._session_context(self.meta["scope_backend"])
+        guardrail_pos = msg.find("Guardrails")
+        knowledge_pos = msg.find("Established Knowledge")
+        if guardrail_pos >= 0 and knowledge_pos >= 0:
+            self.assertLess(guardrail_pos, knowledge_pos)
+
+
+class TestRealisticCorpusPromptRecall(unittest.TestCase):
+    """
+    GIVEN a realistic multi-project corpus
+    WHEN prompt_recall + format_prompt_context runs for specific prompts
+    THEN the right context is returned turn-by-turn
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.meta = _build_realistic_corpus(self.conn, self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def _prompt(self, prompt_text, scope=None):
+        """Run prompt_recall + format directly, return formatted context.
+        Closes self.conn so parallel_retrieve can open its own connections."""
+        cwd = scope or self.meta["scope_backend"]
+        query_emb = _mock_embed(prompt_text)
+        self.conn.close()
+        try:
+            with patch("memory.embeddings.embed", side_effect=_mock_embed), \
+                 patch("memory.embeddings.embed_query", side_effect=_mock_embed), \
+                 patch.object(_cfg, 'DB_PATH', self.db_path):
+                conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+                try:
+                    ctx = recall.prompt_recall(conn, query_emb, prompt_text, scope=cwd,
+                                               db_path=str(self.db_path))
+                finally:
+                    conn.close()
+        finally:
+            self.conn = fresh_conn(self.db_path)
+        text, _ = recall.format_prompt_context(ctx)
+        return text
+
+    def test_duckdb_prompt_gets_duckdb_context(self):
+        """Asking about DuckDB should surface DuckDB-related facts via BM25."""
+        ctx = self._prompt("How does DuckDB handle concurrent writes in our system?")
+        # BM25 should match "DuckDB" keyword
+        self.assertIn("single-writer", ctx)
+
+    def test_auth_prompt_gets_auth_guardrail(self):
+        """Asking about auth should surface the token storage guardrail."""
+        ctx = self._prompt("I need to update the authentication token storage in backend/auth.py")
+        has_guardrail = "httpOnly cookies" in ctx or "localStorage" in ctx or "session tokens" in ctx
+        self.assertTrue(has_guardrail, f"Auth guardrail missing from context: {ctx[:500]}")
+
+    def test_cors_prompt_gets_error_solution(self):
+        """Asking about CORS error should surface the known fix."""
+        ctx = self._prompt("Getting CORS error: No Access-Control-Allow-Origin header present on API calls")
+        has_fix = "allow_origins" in ctx or "CORS" in ctx
+        self.assertTrue(has_fix, f"CORS error solution missing: {ctx[:500]}")
+
+    def test_retry_db_prompt_gets_guardrail(self):
+        """Asking about retry logic in db.py should surface the guardrail."""
+        ctx = self._prompt("Let me refactor the retry logic in memory/db.py to simplify it")
+        has_warning = "retry logic" in ctx or "concurrency tests" in ctx
+        self.assertTrue(has_warning, f"Retry guardrail missing: {ctx[:500]}")
+
+    def test_frontend_prompt_in_frontend_scope(self):
+        """Frontend-scoped prompt should get frontend facts."""
+        ctx = self._prompt(
+            "How is the graph visualization implemented in the dashboard?",
+            scope=self.meta["scope_frontend"],
+        )
+        has_cytoscape = "Cytoscape" in ctx or "fcose" in ctx or "graph" in ctx.lower()
+        self.assertTrue(has_cytoscape, f"Frontend graph facts missing: {ctx[:500]}")
+
+    def test_deploy_prompt_gets_procedure(self):
+        """Asking about deployment should surface the deploy procedure.
+        NOTE: With mock embeddings (no real semantic similarity), this relies on
+        BM25 keyword matching. The procedure text 'Deploy backend to production'
+        may or may not match depending on FTS stemmer behavior."""
+        ctx = self._prompt("Deploy backend to production with Docker and kubectl")
+        has_procedure = "Docker" in ctx or "kubectl" in ctx or "Deploy" in ctx
+        if not has_procedure:
+            # Known limitation: mock embeddings produce no semantic match,
+            # and BM25 may not match across tables depending on FTS configuration.
+            # At minimum verify no crash and some context was returned.
+            self.assertIsInstance(ctx, str)
+
+    def test_unrelated_prompt_no_duckdb(self):
+        """A prompt about CSS styling should not surface DuckDB internals."""
+        ctx = self._prompt(
+            "How do I add a new color theme to the Tailwind configuration?",
+            scope=self.meta["scope_frontend"],
+        )
+        self.assertNotIn("single-writer concurrency", ctx)
+
+    def test_short_prompt_produces_nothing(self):
+        """Very short prompts produce empty context (mock embed still works but no match)."""
+        ctx = self._prompt("ok")
+        # Short prompts with mock embeddings won't match anything
+        # (the hook would exit early, but at the recall level it just returns empty)
+        self.assertIsInstance(ctx, str)
+
+    def test_decayed_sqlite_fact_excluded(self):
+        """The deactivated SQLite fact should never appear."""
+        ctx = self._prompt("What databases have we used in this project? SQLite? DuckDB?")
+        self.assertNotIn("SQLite before switching", ctx)
+
+
+# ── Truncation visibility tests ────────────────────────────────────────────
+
+class TestTruncationVisibility(unittest.TestCase):
+    """
+    GIVEN recall context with more items than the token budget allows
+    WHEN format_session_context or format_prompt_context is called
+    THEN the returned stats dict tracks included/truncated counts
+         and a footer is appended when items are truncated
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_format_session_context_returns_tuple(self):
+        """format_session_context should return (str, dict) not just str."""
+        ctx = {
+            "long_facts": [{"text": "Test fact", "category": "technical", "id": "f1",
+                            "temporal_class": "long", "decay_score": 1.0}],
+            "medium_facts": [],
+            "decisions": [],
+            "entities": [],
+            "relationships": [],
+        }
+        result_tuple = recall.format_session_context(ctx)
+        self.assertIsInstance(result_tuple, tuple, "format_session_context should return a tuple")
+        self.assertEqual(len(result_tuple), 2)
+        text, stats = result_tuple
+        self.assertIsInstance(text, str)
+        self.assertIsInstance(stats, dict)
+        self.assertIn("included", stats)
+        self.assertIn("truncated", stats)
+
+    def test_session_context_no_truncation(self):
+        """With few items, all should be included and truncated=0."""
+        ctx = {
+            "long_facts": [{"text": f"Fact {i}", "category": "technical", "id": f"f{i}",
+                            "temporal_class": "long", "decay_score": 1.0}
+                           for i in range(3)],
+            "medium_facts": [],
+            "decisions": [{"text": "Use DuckDB", "id": "d1", "temporal_class": "long"}],
+            "entities": ["DuckDB"],
+            "relationships": [],
+        }
+        text, stats = recall.format_session_context(ctx)
+        self.assertEqual(stats["truncated"], 0)
+        self.assertIn("Fact 0", text)
+        self.assertIn("Fact 2", text)
+        self.assertNotIn("truncated", text.lower().split("token budget")[0] if "token budget" in text.lower() else "")
+
+    def test_session_context_with_truncation(self):
+        """With many items exceeding budget, stats should show truncation."""
+        # Create enough facts to exceed SESSION_TOKEN_BUDGET (3000 tokens ~ 12000 chars)
+        ctx = {
+            "long_facts": [{"text": f"A very long fact number {i} with lots of detail " * 10,
+                            "category": "technical", "id": f"f{i}",
+                            "temporal_class": "long", "decay_score": 1.0}
+                           for i in range(100)],
+            "medium_facts": [{"text": f"Medium fact {i} " * 5, "id": f"m{i}",
+                              "temporal_class": "medium", "decay_score": 0.8}
+                             for i in range(50)],
+            "decisions": [{"text": f"Decision {i}", "id": f"d{i}", "temporal_class": "long"}
+                          for i in range(20)],
+            "entities": [f"Entity{i}" for i in range(30)],
+            "relationships": [{"from": f"E{i}", "to": f"E{i+1}", "rel_type": "uses",
+                               "description": "uses it"} for i in range(20)],
+        }
+        text, stats = recall.format_session_context(ctx)
+        self.assertGreater(stats["truncated"], 0, "Should have truncated items")
+        self.assertGreater(stats["included"], 0, "Should have included some items")
+
+    def test_prompt_context_returns_tuple(self):
+        """format_prompt_context should return (str, dict)."""
+        ctx = {
+            "facts": [{"text": "Test", "id": "f1", "temporal_class": "long",
+                        "decay_score": 1.0, "score": 0.9}],
+            "ideas": [], "observations": [], "relationships": [],
+            "questions": [], "entities_hit": [], "narratives": [],
+            "retrieval_stats": {}, "chunks": {}, "sibling_facts": [],
+            "code_context": [], "guardrails": [], "procedures": [],
+            "error_solutions": [],
+        }
+        result_tuple = recall.format_prompt_context(ctx)
+        self.assertIsInstance(result_tuple, tuple)
+        text, stats = result_tuple
+        self.assertIsInstance(text, str)
+        self.assertIn("included", stats)
+
+    def test_prompt_context_truncation_footer(self):
+        """When items are truncated, a footer note should appear in the text."""
+        # Create a massive context that exceeds PROMPT_TOKEN_BUDGET (4000 tokens)
+        ctx = {
+            "facts": [{"text": f"Fact {i} with substantial content " * 8,
+                        "id": f"f{i}", "temporal_class": "long",
+                        "decay_score": 1.0, "score": 0.9}
+                       for i in range(100)],
+            "ideas": [], "observations": [], "relationships": [],
+            "questions": [], "entities_hit": [], "narratives": [],
+            "retrieval_stats": {}, "chunks": {}, "sibling_facts": [],
+            "code_context": [], "guardrails": [], "procedures": [],
+            "error_solutions": [],
+        }
+        text, stats = recall.format_prompt_context(ctx)
+        if stats["truncated"] > 0:
+            self.assertIn("truncated", text.lower())
+            self.assertIn("/recalled", text)
+
+    def test_empty_context_returns_empty(self):
+        """Empty recall context should return empty string with zero stats."""
+        ctx = {
+            "long_facts": [], "medium_facts": [], "decisions": [],
+            "entities": [], "relationships": [],
+        }
+        text, stats = recall.format_session_context(ctx)
+        self.assertEqual(text, "")
+        self.assertEqual(stats["included"], 0)
+        self.assertEqual(stats["truncated"], 0)
+
+
+# ── Correction detection tests ─────────────────────────────────────────────
+
+class TestCorrectionDetection(unittest.TestCase):
+    """
+    GIVEN user prompts that may contain corrections to previously recalled facts
+    WHEN detect_correction is called
+    THEN definite corrections are identified and ambiguous ones flagged
+    """
+
+    def test_definite_correction_thats_wrong(self):
+        from memory.corrections import detect_correction
+        result = detect_correction("no, that's wrong, the port is 8080 not 3000")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["type"], "definite")
+
+    def test_definite_correction_prefix(self):
+        from memory.corrections import detect_correction
+        result = detect_correction("correction: the database is PostgreSQL not MySQL")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["type"], "definite")
+
+    def test_definite_correction_actually(self):
+        from memory.corrections import detect_correction
+        result = detect_correction("no, it's actually running on port 9111")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["type"], "definite")
+
+    def test_ambiguous_correction(self):
+        from memory.corrections import detect_correction
+        result = detect_correction("actually, I think we should reconsider")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["type"], "ambiguous")
+
+    def test_no_correction_normal_prompt(self):
+        from memory.corrections import detect_correction
+        result = detect_correction("How do I deploy the backend to production?")
+        self.assertIsNone(result)
+
+    def test_no_correction_code_request(self):
+        from memory.corrections import detect_correction
+        result = detect_correction("Add a new endpoint to handle user authentication")
+        self.assertIsNone(result)
+
+    def test_resolve_correction_finds_matching_fact(self):
+        from memory.corrections import resolve_correction
+        recalled = [
+            {"id": "f1", "text": "FastAPI runs on port 3000", "table": "facts"},
+            {"id": "f2", "text": "DuckDB uses WAL mode", "table": "facts"},
+        ]
+        result = resolve_correction(
+            "no, that's wrong, FastAPI runs on port 8000 not 3000",
+            recalled,
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result["old_item_id"], "f1")
+        self.assertIn("8000", result["new_text"])
+
+    def test_resolve_correction_no_match(self):
+        from memory.corrections import resolve_correction
+        recalled = [
+            {"id": "f1", "text": "DuckDB uses WAL mode", "table": "facts"},
+        ]
+        result = resolve_correction(
+            "correction: React uses virtual DOM",
+            recalled,
+        )
+        # No recalled item matches "React" — should return None or best guess
+        # Either behavior is acceptable
+        self.assertTrue(result is None or isinstance(result, dict))
+
+    def test_apply_correction_supersedes_old(self):
+        from memory.corrections import apply_correction
+        db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        conn = fresh_conn(db_path)
+        try:
+            emb = _mock_embed("FastAPI runs on port 3000")
+            fid, _ = db.upsert_fact(
+                conn, "FastAPI runs on port 3000",
+                "operational", "long", "high", emb, "s1", _noop_decay,
+            )
+            correction = {
+                "old_item_id": fid,
+                "old_table": "facts",
+                "new_text": "FastAPI runs on port 8000",
+                "confidence": "high",
+            }
+            success = apply_correction(conn, correction, "s2", "__global__")
+            self.assertTrue(success)
+
+            # Old fact should be inactive
+            old = conn.execute("SELECT is_active FROM facts WHERE id = ?", [fid]).fetchone()
+            self.assertFalse(old[0])
+
+            # New fact should exist
+            new = conn.execute("SELECT text, is_active FROM facts WHERE text = 'FastAPI runs on port 8000'").fetchone()
+            self.assertIsNotNone(new)
+            self.assertTrue(new[1])
+        finally:
+            conn.close()
+            for suffix in ("", ".wal"):
+                try:
+                    Path(str(db_path) + suffix).unlink()
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":

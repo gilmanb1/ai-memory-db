@@ -94,6 +94,8 @@ def cmd_facts(args):
 
 
 def cmd_search(args):
+    import os
+
     _require_db()
     from .embeddings import embed, is_ollama_available
     if not is_ollama_available():
@@ -107,19 +109,79 @@ def cmd_search(args):
         sys.exit(1)
 
     from . import db
+    from .scope import resolve_scope, scope_display_name
+
+    scope = args.scope if args.scope is not None else resolve_scope(os.getcwd())
+    limit = _effective_limit(args.limit)
+    threshold = 0.3
+    type_filter = args.type
+
     conn = db.get_connection(read_only=True)
-    results = db.search_facts(conn, query_emb, limit=_effective_limit(args.limit), threshold=0.3)
+
+    # Define all searchable types
+    search_types = {}
+    if not type_filter or type_filter == "facts":
+        search_types["Facts"] = lambda: db.search_facts(conn, query_emb, limit=limit, threshold=threshold, scope=scope)
+    if not type_filter or type_filter == "decisions":
+        search_types["Decisions"] = lambda: db._vector_search(
+            conn, "decisions", query_emb,
+            "id, text, temporal_class, decay_score, scope",
+            db._scope_filter(scope), limit, threshold,
+        )
+    if not type_filter or type_filter == "observations":
+        search_types["Observations"] = lambda: db.search_observations(conn, query_emb, limit=limit, threshold=threshold, scope=scope)
+    if not type_filter or type_filter == "guardrails":
+        search_types["Guardrails"] = lambda: db.search_guardrails(conn, query_emb, limit=limit, threshold=threshold, scope=scope)
+    if not type_filter or type_filter == "procedures":
+        search_types["Procedures"] = lambda: db.search_procedures(conn, query_emb, limit=limit, threshold=threshold, scope=scope)
+    if not type_filter or type_filter == "error_solutions":
+        search_types["Error Solutions"] = lambda: db.search_error_solutions(conn, query_emb, limit=limit, threshold=threshold, scope=scope)
+
+    # Run searches, collecting results by type
+    all_results = {}
+    for type_name, search_fn in search_types.items():
+        try:
+            results = search_fn()
+            if results:
+                all_results[type_name] = results
+        except Exception:
+            pass  # table may not exist yet
+
     conn.close()
 
-    if not results:
-        print("No matching facts found.")
+    total_count = sum(len(v) for v in all_results.values())
+    if total_count == 0:
+        print(f"No results found for \"{args.query}\".")
         return
 
     print(f"Search: \"{args.query}\"\n")
-    for r in results:
-        score = r.get("score", 0)
-        tc = r.get("temporal_class", "?")
-        print(f"  [{score:.3f}] [{tc}] {r['text']}")
+
+    def _display_text(r, type_name):
+        """Extract the primary display text from a result dict."""
+        if type_name == "Guardrails":
+            return r.get("warning", r.get("text", ""))
+        if type_name == "Procedures":
+            return r.get("task_description", r.get("text", ""))
+        if type_name == "Error Solutions":
+            return r.get("error_pattern", r.get("text", ""))
+        return r.get("text", "")
+
+    for type_name, results in all_results.items():
+        count = len(results)
+        label = "match" if count == 1 else "matches"
+        print(f"### {type_name} ({count} {label})")
+        for r in results:
+            score = r.get("score", 0)
+            tc = r.get("temporal_class", "")
+            item_scope = r.get("scope", "")
+            scope_label = scope_display_name(item_scope) if item_scope else ""
+            tc_part = f" [{tc}]" if tc else ""
+            print(f"  [{score:.2f}]{tc_part} {_display_text(r, type_name)} ({scope_label})")
+        print()
+
+    type_count = len(all_results)
+    scope_label = scope_display_name(scope) if scope else "all"
+    print(f"---\n{total_count} results across {type_count} {'type' if type_count == 1 else 'types'} | scope: {scope_label} + global")
 
 
 def cmd_entities(args):
@@ -265,6 +327,133 @@ def cmd_observations(args):
         print(f"  [{oid}] [{tc}] {o['text']} (proof: {proof} facts)")
 
 
+def cmd_session_learned(args):
+    _require_db()
+    from . import db
+    conn = db.get_connection(read_only=True)
+
+    # Resolve session id
+    if args.session_id:
+        # Allow prefix match
+        rows = conn.execute(
+            "SELECT id, trigger, cwd, message_count, summary, created_at "
+            "FROM sessions WHERE id LIKE ? ORDER BY created_at DESC LIMIT 1",
+            [args.session_id + "%"],
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, trigger, cwd, message_count, summary, created_at "
+            "FROM sessions ORDER BY created_at DESC LIMIT 1"
+        ).fetchall()
+
+    if not rows:
+        print("No session found.")
+        conn.close()
+        sys.exit(1)
+
+    sid, trigger, cwd, msg_count, summary, created = rows[0]
+
+    # Derive scope display name from cwd
+    scope_name = Path(cwd).name if cwd else "unknown"
+
+    print(f"## Session: {sid}")
+    print(f"  {str(created)[:19]}  [{trigger}]  {msg_count or '?'} msgs")
+    print(f"  Scope: {scope_name}")
+    if summary:
+        print(f"  Summary: {summary}")
+    print()
+
+    limit = _effective_limit(args.limit)
+    total = 0
+
+    # Tables: (label, table_name, text_column)
+    standard_tables = [
+        ("Facts", "facts", "text"),
+        ("Ideas", "ideas", "text"),
+        ("Decisions", "decisions", "text"),
+        ("Observations", "observations", "text"),
+        ("Guardrails", "guardrails", "warning"),
+        ("Procedures", "procedures", "task_description"),
+        ("Error Solutions", "error_solutions", "error_pattern"),
+    ]
+
+    # Session narratives
+    narratives = conn.execute(
+        "SELECT pass_number, narrative, is_final FROM session_narratives "
+        "WHERE session_id = ? ORDER BY pass_number",
+        [sid],
+    ).fetchall()
+    if narratives:
+        print("### Narrative")
+        for pass_num, narrative, is_final in narratives:
+            tag = " (final)" if is_final else ""
+            print(f"  Pass {pass_num}{tag}: {narrative}")
+        print()
+
+    # Standard tables
+    for label, table, text_col in standard_tables:
+        try:
+            items = conn.execute(
+                f"SELECT id, {text_col}, temporal_class, created_at FROM {table} "
+                f"WHERE source_session = ? AND is_active = TRUE "
+                f"ORDER BY created_at LIMIT ?",
+                [sid, limit],
+            ).fetchall()
+        except Exception:
+            items = []
+
+        count = len(items)
+        total += count
+        print(f"### {label} ({count} extracted)")
+        for _, text, tc, _ in items:
+            print(f"  [{tc}] {text}")
+        print()
+
+    # Entities — linked via fact_entity_links for facts from this session
+    try:
+        fact_ids = conn.execute(
+            "SELECT id FROM facts WHERE source_session = ? AND is_active = TRUE",
+            [sid],
+        ).fetchall()
+        entity_names = []
+        if fact_ids:
+            fid_list = [r[0] for r in fact_ids]
+            placeholders = ", ".join("?" * len(fid_list))
+            entity_names = [r[0] for r in conn.execute(
+                f"SELECT DISTINCT entity_name FROM fact_entity_links WHERE fact_id IN ({placeholders})",
+                fid_list,
+            ).fetchall()]
+    except Exception:
+        entity_names = []
+
+    total += len(entity_names)
+    print(f"### Entities ({len(entity_names)} extracted)")
+    if entity_names:
+        print(f"  {', '.join(entity_names)}")
+    print()
+
+    # Relationships
+    try:
+        rels = conn.execute(
+            "SELECT id, from_entity, to_entity, rel_type, description "
+            "FROM relationships WHERE source_session = ?",
+            [sid],
+        ).fetchall()
+    except Exception:
+        rels = []
+
+    total += len(rels)
+    print(f"### Relationships ({len(rels)} extracted)")
+    for _, from_e, to_e, rel_type, desc in rels:
+        print(f"  {from_e} --[{rel_type}]--> {to_e}")
+    print()
+
+    conn.close()
+
+    print("---")
+    print(f"Total: {total} items extracted from session {sid}")
+
+
 def cmd_consolidate(args):
     import os
 
@@ -312,9 +501,13 @@ def main():
     p_facts.add_argument("--class", dest="temporal_class", choices=["short", "medium", "long"])
     p_facts.add_argument("--limit", type=int, default=0)
 
-    p_search = sub.add_parser("search", help="Semantic search facts")
+    p_search = sub.add_parser("search", help="Semantic search across all memory types")
     p_search.add_argument("query", help="Search query text")
     p_search.add_argument("--limit", type=int, default=0)
+    p_search.add_argument("--scope", type=str, default=None, help="Project scope (default: resolve from cwd)")
+    p_search.add_argument("--type", type=str, default=None,
+                          choices=["facts", "decisions", "observations", "guardrails", "procedures", "error_solutions"],
+                          help="Filter to a specific memory type")
 
     p_entities = sub.add_parser("entities", help="List known entities")
     p_entities.add_argument("--limit", type=int, default=0)
@@ -339,6 +532,10 @@ def main():
     p_consolidate = sub.add_parser("consolidate", help="Manually trigger consolidation")
     p_consolidate.add_argument("--scope", type=str, default="", help="Project scope (default: resolve from cwd)")
 
+    p_session_learned = sub.add_parser("session-learned", help="Show what was learned from a session")
+    p_session_learned.add_argument("session_id", nargs="?", default="", help="Session ID (prefix ok). Default: most recent")
+    p_session_learned.add_argument("--limit", type=int, default=0)
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -356,6 +553,7 @@ def main():
         "scopes": cmd_scopes,
         "observations": cmd_observations,
         "consolidate": cmd_consolidate,
+        "session-learned": cmd_session_learned,
     }
     commands[args.command](args)
 

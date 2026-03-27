@@ -42,18 +42,44 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // CHARS_PER_TOKEN
 
 
-def _budget_append(lines: list[str], section_lines: list[str], budget: int) -> int:
+def _new_stats() -> dict:
+    """Create a fresh truncation stats dict."""
+    return {"included": 0, "truncated": 0, "section_counts": {}}
+
+
+def _budget_append(
+    lines: list[str],
+    section_lines: list[str],
+    budget: int,
+    stats: dict | None = None,
+    section_name: str = "",
+) -> int:
     """
     Append as many section_lines as fit within the remaining budget.
     Returns the remaining budget after appending.
+    Optionally tracks included/truncated counts in stats dict.
     """
+    included = 0
+    truncated = 0
     for line in section_lines:
         cost = _estimate_tokens(line + "\n")
         if budget - cost < 0:
             lines.append("  ... (truncated to stay within token budget)")
-            return 0
+            truncated += len(section_lines) - included - truncated
+            break
         lines.append(line)
         budget -= cost
+        included += 1
+
+    if stats is not None:
+        # Don't count section headers as items
+        item_count = max(0, included - 1) if included > 0 else 0  # -1 for header line
+        trunc_count = max(0, len(section_lines) - included)
+        stats["included"] += item_count
+        stats["truncated"] += trunc_count
+        if section_name:
+            stats["section_counts"][section_name] = {"included": item_count, "truncated": trunc_count}
+
     return budget
 
 
@@ -148,8 +174,12 @@ def session_recall(
     }
 
 
-def format_session_context(recall: dict) -> str:
-    """Render session recall as a markdown systemMessage string, respecting token budget."""
+def format_session_context(recall: dict) -> tuple[str, dict]:
+    """Render session recall as a markdown systemMessage string, respecting token budget.
+
+    Returns (formatted_text, stats) where stats tracks included/truncated counts.
+    """
+    stats = _new_stats()
     header = "## Memory Context (from previous sessions)\n"
     lines: list[str] = [header]
     budget = SESSION_TOKEN_BUDGET - _estimate_tokens(header)
@@ -171,7 +201,7 @@ def format_session_context(recall: dict) -> str:
                 line += f" (files: {', '.join(files)})"
             section.append(line)
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "guardrails")
 
     # Priority 0b: Procedures
     if recall.get("procedures") and budget > 0:
@@ -179,7 +209,7 @@ def format_session_context(recall: dict) -> str:
         for p in recall["procedures"]:
             section.append(f"- **{p['task_description']}**: {p['steps']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "procedures")
 
     # Priority 0c: Community summaries (hierarchical knowledge)
     if recall.get("community_summaries") and budget > 0:
@@ -189,7 +219,7 @@ def format_session_context(recall: dict) -> str:
             ent_label = f" ({', '.join(entities[:5])})" if entities else ""
             section.append(f"- {cs['summary']}{ent_label}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "community_summaries")
 
     # Priority 1: Long-term facts
     if recall["long_facts"] and budget > 0:
@@ -197,7 +227,7 @@ def format_session_context(recall: dict) -> str:
         for f in recall["long_facts"]:
             section.append(f"- [{f['category']}] {f['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "long_facts")
 
     # Priority 2: Decisions
     if recall["decisions"] and budget > 0:
@@ -205,7 +235,7 @@ def format_session_context(recall: dict) -> str:
         for d in recall["decisions"]:
             section.append(f"- {d['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "decisions")
 
     # Priority 3: Observations (synthesized knowledge)
     if recall.get("observations") and budget > 0:
@@ -214,7 +244,7 @@ def format_session_context(recall: dict) -> str:
             proof = o.get("proof_count", 1)
             section.append(f"- {o['text']} (evidence: {proof} facts)")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "observations")
 
     # Priority 4: Medium-term facts
     if recall["medium_facts"] and budget > 0:
@@ -222,12 +252,12 @@ def format_session_context(recall: dict) -> str:
         for f in recall["medium_facts"]:
             section.append(f"- {f['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "medium_facts")
 
     # Priority 4: Entities (cheap — single line)
     if recall["entities"] and budget > 0:
         section = ["### Known Entities", ", ".join(recall["entities"]), ""]
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "entities")
 
     # Priority 5: Relationships (lowest priority)
     if recall["relationships"] and budget > 0:
@@ -237,11 +267,16 @@ def format_session_context(recall: dict) -> str:
         if len(recall["relationships"]) > 20:
             section.append(f"  ... (+{len(recall['relationships'])-20} more in memory)")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "relationships")
 
     if len(lines) <= 2:
-        return ""  # nothing to inject
-    return "\n".join(lines)
+        return ("", stats)
+
+    # Truncation footer
+    if stats["truncated"] > 0:
+        lines.append(f"\n> Note: {stats['truncated']} items truncated due to token budget. Use /recalled to see what was included.")
+
+    return ("\n".join(lines), stats)
 
 
 # ── Prompt-level recall (UserPromptSubmit) ─────────────────────────────────
@@ -677,8 +712,12 @@ def _legacy_prompt_recall(
     }
 
 
-def format_prompt_context(recall: dict) -> str:
-    """Render prompt recall as an additionalContext markdown string, respecting token budget."""
+def format_prompt_context(recall: dict) -> tuple[str, dict]:
+    """Render prompt recall as an additionalContext markdown string, respecting token budget.
+
+    Returns (formatted_text, stats) where stats tracks included/truncated counts.
+    """
+    stats = _new_stats()
     has_content = any([
         recall.get("facts"), recall.get("ideas"),
         recall.get("relationships"), recall.get("questions"),
@@ -688,7 +727,7 @@ def format_prompt_context(recall: dict) -> str:
         recall.get("error_solutions"), recall.get("code_context"),
     ])
     if not has_content:
-        return ""
+        return ("", stats)
 
     header = "## Recalled Memory (relevant to this prompt)\n"
     lines: list[str] = [header]
@@ -708,7 +747,7 @@ def format_prompt_context(recall: dict) -> str:
                 line += f" [breaks: {consequence}]"
             section.append(line)
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "guardrails")
 
     # Priority 0b: Error solutions
     if recall.get("error_solutions") and budget > 0:
@@ -716,7 +755,7 @@ def format_prompt_context(recall: dict) -> str:
         for e in recall["error_solutions"]:
             section.append(f"- **{e.get('error_pattern', '')}** → {e.get('solution', '')}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "error_solutions")
 
     # Priority 0c: Procedures
     if recall.get("procedures") and budget > 0:
@@ -724,7 +763,7 @@ def format_prompt_context(recall: dict) -> str:
         for p in recall["procedures"]:
             section.append(f"- **{p.get('task_description', '')}**: {p.get('steps', '')}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "procedures")
 
     # Code structure section
     code_ctx = recall.get("code_context", [])
@@ -738,7 +777,7 @@ def format_prompt_context(recall: dict) -> str:
                 line += f" | {c['dependent_count']} dependents"
             section.append(line)
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "code_context")
 
     # Priority 1: Facts
     if recall.get("facts") and budget > 0:
@@ -748,7 +787,7 @@ def format_prompt_context(recall: dict) -> str:
             tc_label = f"[{tc}] " if tc else ""
             section.append(f"- {tc_label}{f['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "facts")
 
     # Priority 2: Observations (synthesized knowledge)
     if recall.get("observations") and budget > 0:
@@ -758,7 +797,7 @@ def format_prompt_context(recall: dict) -> str:
             proof_label = f" (evidence: {proof} facts)" if proof else ""
             section.append(f"- {o['text']}{proof_label}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "observations")
 
     # Priority 3: Related Session Context (narratives)
     if recall.get("narratives") and budget > 0:
@@ -766,7 +805,7 @@ def format_prompt_context(recall: dict) -> str:
         for n in recall["narratives"]:
             section.append(f"- {n['narrative']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "narratives")
 
     # Priority 3b: Sibling facts (from same conversation as retrieved facts)
     if recall.get("sibling_facts") and budget > 0:
@@ -774,7 +813,7 @@ def format_prompt_context(recall: dict) -> str:
         for f in recall["sibling_facts"]:
             section.append(f"- {f['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "sibling_facts")
 
     # Priority 3c: Source conversation chunks (verbatim detail backup)
     chunks = recall.get("chunks", {})
@@ -788,7 +827,7 @@ def format_prompt_context(recall: dict) -> str:
                 text = text[:max_chars] + "..."
             section.append(f'> {text}')
             section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "chunks")
 
     # Priority 4: Ideas
     if recall.get("ideas") and budget > 0:
@@ -796,7 +835,7 @@ def format_prompt_context(recall: dict) -> str:
         for i in recall["ideas"]:
             section.append(f"- [{i.get('idea_type','')}] {i['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "ideas")
 
     # Priority 4: Relationships
     if recall.get("relationships") and budget > 0:
@@ -804,7 +843,7 @@ def format_prompt_context(recall: dict) -> str:
         for r in recall["relationships"]:
             section.append(f"- {r['from_entity']} —[{r['rel_type']}]-> {r['to_entity']}: {r['description']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "relationships")
 
     # Priority 5: Open questions
     if recall.get("questions") and budget > 0:
@@ -812,9 +851,13 @@ def format_prompt_context(recall: dict) -> str:
         for q in recall["questions"]:
             section.append(f"- ? {q['text']}")
         section.append("")
-        budget = _budget_append(lines, section, budget)
+        budget = _budget_append(lines, section, budget, stats, "questions")
 
-    return "\n".join(lines)
+    # Truncation footer
+    if stats["truncated"] > 0:
+        lines.append(f"\n> Note: {stats['truncated']} items truncated due to token budget. Use /recalled to see what was included.")
+
+    return ("\n".join(lines), stats)
 
 
 # ── Entity extraction from free text ──────────────────────────────────────

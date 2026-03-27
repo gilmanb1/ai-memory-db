@@ -34,6 +34,16 @@ const LANG_COLORS: Record<string, string> = {
   unknown: "#6b7280",
 };
 
+const EDGE_COLORS: Record<string, string> = {
+  internal: "#34d399",
+  external: "#fb923c",
+};
+
+const EDGE_WIDTHS: Record<string, number> = {
+  internal: 2,
+  external: 1.5,
+};
+
 const LAYOUTS: Record<string, any> = {
   fcose: {
     name: "fcose",
@@ -76,9 +86,17 @@ function getLangColor(language: string): string {
   return LANG_COLORS[language?.toLowerCase()] || LANG_COLORS.unknown;
 }
 
-function scaleSize(symbolCount: number): number {
-  const clamped = Math.max(0, Math.min(symbolCount, 50));
-  return 20 + (clamped / 50) * 40;
+function computeNodeSize(degree: number, symbolCount: number): number {
+  const raw = 20 + Math.sqrt(degree || 0) * 8 + Math.sqrt(symbolCount || 0) * 3;
+  return Math.max(20, Math.min(80, raw));
+}
+
+function getEdgeColor(depType: string): string {
+  return EDGE_COLORS[depType] || EDGE_COLORS.external;
+}
+
+function getEdgeWidth(depType: string): number {
+  return EDGE_WIDTHS[depType] || EDGE_WIDTHS.external;
 }
 
 interface SymbolRow {
@@ -137,17 +155,35 @@ export function CodeGraphView() {
           },
         },
         {
+          selector: ":parent",
+          style: {
+            "background-opacity": 0.06,
+            "background-color": "#94a3b8",
+            "border-width": 1,
+            "border-color": "#475569",
+            "border-style": "dashed",
+            "border-opacity": 0.4,
+            label: "data(label)",
+            "font-size": "11px",
+            color: "#64748b",
+            "text-valign": "top",
+            "text-halign": "center",
+            "text-margin-y": -8,
+            padding: "20px",
+          },
+        },
+        {
           selector: "edge",
           style: {
             "font-size": "7px",
             color: "#9ca3af",
             "text-outline-color": "#111827",
             "text-outline-width": 1,
-            "line-color": "#4b5563",
-            "target-arrow-color": "#6b7280",
+            "line-color": "data(edgeColor)",
+            "target-arrow-color": "data(edgeColor)",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
-            width: 1.5,
+            width: "data(edgeWidth)",
             "arrow-scale": 0.8,
           },
         },
@@ -180,14 +216,17 @@ export function CodeGraphView() {
       wheelSensitivity: 0.3,
     });
 
-    // Single click to select file
+    // Single click to select file (ignore compound/parent nodes)
     cy.on("tap", "node", (evt) => {
-      setSelectedFile(evt.target.id());
+      const node = evt.target;
+      if (node.isParent()) return;
+      setSelectedFile(node.id());
     });
 
-    // Double-click focus mode
+    // Double-click focus mode (ignore compound/parent nodes)
     cy.on("dblclick", "node", (evt) => {
       const node = evt.target;
+      if (node.isParent()) return;
       setIsFocusMode(true);
       cy.elements().removeClass("dimmed focused connected connection");
       cy.elements().addClass("dimmed");
@@ -235,29 +274,71 @@ export function CodeGraphView() {
 
     const incomingNodeIds = new Set((data.nodes || []).map((n: any) => n.id));
     const incomingEdgeIds = new Set((data.edges || []).map((e: any) => e.id));
-    const existingNodeIds = new Set(cy.nodes().map((n) => n.id()));
+    const existingNodeIds = new Set(cy.nodes().filter((n) => !n.isParent()).map((n) => n.id()));
 
-    cy.nodes().forEach((n) => {
+    // Collect unique directories for compound nodes
+    const directories = new Set<string>();
+    for (const n of data.nodes || []) {
+      if (n.directory) {
+        directories.add(n.directory);
+      }
+    }
+
+    // Remove stale file nodes and edges
+    cy.nodes().filter((n) => !n.isParent()).forEach((n) => {
       if (!incomingNodeIds.has(n.id())) n.remove();
     });
     cy.edges().forEach((e) => {
       if (!incomingEdgeIds.has(e.id())) e.remove();
     });
 
-    for (const n of data.nodes || []) {
-      const existing = cy.getElementById(n.id);
-      const color = getLangColor(n.language);
-      const size = scaleSize(n.symbol_count || 0);
-      if (existing.length > 0) {
-        existing.data({ label: n.label, color, size });
-      } else {
-        cy.add({ data: { id: n.id, label: n.label, color, size } });
+    // Add/update compound (directory) parent nodes
+    const existingParentIds = new Set(cy.nodes().filter((n) => n.isParent()).map((n) => n.id()));
+    const neededParentIds = new Set<string>();
+    for (const dir of directories) {
+      const parentId = `dir-${dir}`;
+      neededParentIds.add(parentId);
+      if (!existingParentIds.has(parentId)) {
+        cy.add({ data: { id: parentId, label: dir } });
       }
     }
 
+    // Add/update file nodes
+    for (const n of data.nodes || []) {
+      const existing = cy.getElementById(n.id);
+      const color = getLangColor(n.language);
+      const size = computeNodeSize(n.degree || 0, n.symbol_count || 0);
+      const parent = n.directory ? `dir-${n.directory}` : undefined;
+      if (existing.length > 0 && !existing.isParent()) {
+        existing.data({ label: n.label, color, size, parent });
+      } else if (existing.length === 0) {
+        const nodeData: any = { id: n.id, label: n.label, color, size };
+        if (parent) nodeData.parent = parent;
+        cy.add({ data: nodeData });
+      }
+    }
+
+    // Remove orphan parent nodes (directories with no children)
+    cy.nodes().filter((n) => n.isParent()).forEach((n) => {
+      if (!neededParentIds.has(n.id()) || n.children().length === 0) {
+        n.remove();
+      }
+    });
+
+    // Add edges
     for (const e of data.edges || []) {
       if (cy.getElementById(e.id).length === 0) {
-        cy.add({ data: { id: e.id, source: e.source, target: e.target, label: e.import_name || "" } });
+        const depType = e.dep_type || "external";
+        cy.add({
+          data: {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: e.import_name || "",
+            edgeColor: getEdgeColor(depType),
+            edgeWidth: getEdgeWidth(depType),
+          },
+        });
       }
     }
 
@@ -300,6 +381,7 @@ export function CodeGraphView() {
     if (!query.trim()) return;
     const q = query.toLowerCase();
     cy.nodes().forEach((n) => {
+      if (n.isParent()) return;
       if (n.data("id")?.toLowerCase().includes(q) || n.data("label")?.toLowerCase().includes(q)) {
         n.addClass("highlighted");
       }
@@ -414,14 +496,27 @@ export function CodeGraphView() {
           <Download className="w-3.5 h-3.5" />
         </Button>
 
-        {/* Language legend */}
-        <div className="flex items-center gap-2 ml-auto text-[10px] text-muted-foreground">
-          {Object.entries(LANG_COLORS).filter(([k]) => k !== "unknown").map(([lang, color]) => (
-            <div key={lang} className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-              {lang}
+        {/* Dual legend: Language colors + Edge types */}
+        <div className="flex items-center gap-3 ml-auto text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2">
+            {Object.entries(LANG_COLORS).filter(([k]) => k !== "unknown").map(([lang, color]) => (
+              <div key={lang} className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                {lang}
+              </div>
+            ))}
+          </div>
+          <div className="h-3 w-px bg-border" />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-0.5 rounded" style={{ backgroundColor: EDGE_COLORS.internal }} />
+              internal
             </div>
-          ))}
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-0.5 rounded" style={{ backgroundColor: EDGE_COLORS.external }} />
+              external
+            </div>
+          </div>
         </div>
 
         {isFocusMode && (

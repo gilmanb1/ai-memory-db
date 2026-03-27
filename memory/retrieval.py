@@ -329,15 +329,40 @@ def retrieve_path(
         items: list[ScoredItem] = []
         seen: set[str] = set()
 
-        # Tables that carry file_paths: facts, guardrails, procedures, error_solutions
-        tables = [
-            ("facts", "id, text, temporal_class, decay_score, file_paths"),
+        # ── Facts: file paths stored in fact_file_links join table ─────
+        for qp in paths:
+            try:
+                rows = conn.execute(f"""
+                    SELECT f.id, f.text, f.temporal_class, f.decay_score,
+                           list(DISTINCT ffl.file_path) AS file_paths
+                    FROM facts f
+                    JOIN fact_file_links ffl ON f.id = ffl.fact_id
+                    WHERE f.is_active = TRUE
+                      AND ffl.file_path LIKE ?
+                      {scope_sql}
+                    GROUP BY f.id, f.text, f.temporal_class, f.decay_score
+                    LIMIT 100
+                """, [f"%{qp}%"] + scope_params).fetchall()
+                for fid, text, tc, ds, fps in rows:
+                    if fid not in seen:
+                        seen.add(fid)
+                        items.append(ScoredItem(
+                            id=fid, table="facts", text=text,
+                            score=(ds or 1.0),
+                            metadata={"file_paths": fps, "path_matches": 1,
+                                      "temporal_class": tc, "decay_score": ds},
+                        ))
+            except Exception:
+                pass
+
+        # ── Tables with inline file_paths column ──────────────────────
+        fp_tables = [
             ("guardrails", "id, warning AS text, temporal_class, decay_score, file_paths"),
             ("procedures", "id, task_description AS text, temporal_class, decay_score, file_paths"),
             ("error_solutions", "id, error_pattern AS text, confidence, file_paths"),
         ]
 
-        for table, cols in tables:
+        for table, cols in fp_tables:
             try:
                 rows = conn.execute(f"""
                     SELECT {cols}
@@ -357,7 +382,6 @@ def retrieve_path(
                 if rid in seen:
                     continue
                 row_fps = row_dict.get("file_paths") or []
-                # Score by how many query paths match
                 matches = sum(1 for qp in paths if any(qp in fp or fp in qp for fp in row_fps))
                 if matches > 0:
                     seen.add(rid)
@@ -514,6 +538,11 @@ _SEARCH_TABLES = {
     "ideas": "id, text, temporal_class, decay_score, session_count, last_seen_at, idea_type, scope",
     "decisions": "id, text, temporal_class, decay_score, session_count, last_seen_at, scope",
     "observations": "id, text, proof_count, source_fact_ids, temporal_class, decay_score, session_count, scope",
+    "guardrails": "id, warning AS text, rationale, consequence, importance, scope",
+    "procedures": "id, task_description AS text, steps, importance, scope",
+    "error_solutions": "id, error_pattern AS text, solution, confidence, scope",
+    "session_narratives": "id, narrative AS text, session_id, is_final, scope",
+    "community_summaries": "id, summary AS text, entity_ids, level, scope",
 }
 
 # Tables searched by BM25
@@ -522,6 +551,9 @@ _BM25_TABLES = {
     "ideas": {"text_col": "text", "select_cols": "id, text, idea_type, scope"},
     "decisions": {"text_col": "text", "select_cols": "id, text, temporal_class, scope"},
     "observations": {"text_col": "text", "select_cols": "id, text, proof_count, scope"},
+    "guardrails": {"text_col": "warning", "select_cols": "id, warning AS text, importance, scope"},
+    "procedures": {"text_col": "task_description", "select_cols": "id, task_description AS text, importance, scope"},
+    "error_solutions": {"text_col": "error_pattern", "select_cols": "id, error_pattern AS text, solution, scope"},
 }
 
 

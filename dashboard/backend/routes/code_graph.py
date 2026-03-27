@@ -1,4 +1,5 @@
 from typing import Optional
+from collections import Counter
 from fastapi import APIRouter
 from ..server import get_read_conn
 
@@ -110,6 +111,20 @@ def get_code_graph(scope: Optional[str] = None, limit: int = 200):
         """, scope_params + [limit]).fetchall()
 
         file_set = {r[0] for r in file_rows}
+
+        def _parent_dir(path: str) -> str:
+            """Return the parent directory portion of a path."""
+            if "/" in path:
+                return path.rsplit("/", 1)[0] + "/"
+            return "./"
+
+        def _top_level_dir(path: str) -> str:
+            """Return the first path component (top-level directory)."""
+            parts = path.split("/")
+            if len(parts) > 1:
+                return parts[0] + "/"
+            return "./"
+
         nodes = []
         for fp, lang, sym_count in file_rows:
             label = fp.split("/")[-1] if "/" in fp else fp
@@ -118,10 +133,15 @@ def get_code_graph(scope: Optional[str] = None, limit: int = 200):
                 "label": label,
                 "language": lang or "unknown",
                 "symbol_count": sym_count or 0,
+                "degree": 0,  # filled in after edges
+                "directory": _parent_dir(fp),
             })
+
+        node_index = {n["id"]: n for n in nodes}
 
         # Get dependencies as edges (only between files in our node set)
         edges = []
+        dir_counter: Counter = Counter()
         if file_set:
             placeholders = ",".join(["?"] * len(file_set))
             dep_rows = conn.execute(f"""
@@ -135,14 +155,26 @@ def get_code_graph(scope: Optional[str] = None, limit: int = 200):
                 edge_key = f"{from_f}->{to_f}"
                 if edge_key not in seen_edges:
                     seen_edges.add(edge_key)
+                    from_dir = _parent_dir(from_f)
+                    to_dir = _parent_dir(to_f)
                     edges.append({
                         "id": did,
                         "source": from_f,
                         "target": to_f,
                         "import_name": imp_name or "",
+                        "dep_type": "internal" if from_dir == to_dir else "external",
                     })
+                    # Increment degree for both endpoints
+                    if from_f in node_index:
+                        node_index[from_f]["degree"] += 1
+                    if to_f in node_index:
+                        node_index[to_f]["degree"] += 1
 
-        return {"nodes": nodes, "edges": edges}
+        # Compute top-level directory counts
+        for fp in file_set:
+            dir_counter[_top_level_dir(fp)] += 1
+
+        return {"nodes": nodes, "edges": edges, "dir_counts": dict(dir_counter)}
     finally:
         conn.close()
 

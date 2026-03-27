@@ -5,8 +5,11 @@ Edit these to customise behaviour without touching logic files.
 from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-MEMORY_DIR = Path.home() / ".claude" / "memory"
-DB_PATH    = MEMORY_DIR / "knowledge.duckdb"
+MEMORY_DIR    = Path.home() / ".claude" / "memory"
+DB_PATH       = MEMORY_DIR / "knowledge.duckdb"
+SNAPSHOT_DIR  = MEMORY_DIR / "snapshots"
+MAX_SNAPSHOTS = 5
+SNAPSHOT_ON_SESSION_END = True
 
 # ── Ollama ─────────────────────────────────────────────────────────────────
 OLLAMA_URL        = "http://localhost:11434"

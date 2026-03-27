@@ -71,7 +71,7 @@ from .routes import guardrails, procedures, error_solutions  # noqa: E402
 from .routes import observations, sessions, scopes, search  # noqa: E402
 from .routes import ideas, questions  # noqa: E402
 from .routes import code_graph  # noqa: E402
-from .routes import knowledge_graph, chat  # noqa: E402
+from .routes import knowledge_graph, chat, review  # noqa: E402
 
 app.include_router(stats.router, prefix="/api/v1")
 app.include_router(facts.router, prefix="/api/v1")
@@ -90,6 +90,7 @@ app.include_router(questions.router, prefix="/api/v1")
 app.include_router(code_graph.router, prefix="/api/v1")
 app.include_router(knowledge_graph.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
+app.include_router(review.router, prefix="/api/v1")
 
 # ── Serve static frontend (if built) ─────────────────────────────────
 static_dir = Path(__file__).parent.parent / "frontend" / "out"

@@ -45,6 +45,15 @@ def main(payload: dict) -> None:
         print(f"[session_end] Extraction already complete for {session_id[:12]}...", file=sys.stderr)
         sys.exit(0)
 
+    # ── Auto-snapshot before extraction ─────────────────────────────────
+    try:
+        from memory.config import SNAPSHOT_ON_SESSION_END, DB_PATH, SNAPSHOT_DIR, MAX_SNAPSHOTS
+        if SNAPSHOT_ON_SESSION_END and DB_PATH.exists():
+            from memory.backup import create_snapshot
+            create_snapshot(str(DB_PATH), str(SNAPSHOT_DIR), "session_end", MAX_SNAPSHOTS)
+    except Exception:
+        pass  # Never block session exit for a snapshot failure
+
     # Fire-and-forget: spawn detached background worker with --final flag
     subprocess.Popen(
         [sys.executable, str(_WORKER), session_id, transcript_path, cwd, "--final"],

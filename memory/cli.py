@@ -563,6 +563,63 @@ def cmd_review(args):
     print(f"To reject:  python -m memory review reject <id>")
 
 
+def cmd_export(args):
+    _require_db()
+    from .backup import export_memory
+    output = args.output or str(Path.home() / "memory_export.json")
+    scope = args.scope if args.scope else None
+    counts = export_memory(str(DB_PATH), output, scope=scope)
+    print(f"Exported to {output}")
+    for table, count in sorted(counts.items()):
+        if count > 0:
+            print(f"  {table}: {count}")
+
+
+def cmd_import(args):
+    _require_db()
+    from .backup import import_memory
+    counts = import_memory(str(DB_PATH), args.path)
+    print(f"Imported from {args.path}")
+    for table, count in sorted(counts.items()):
+        if count > 0:
+            print(f"  {table}: {count}")
+
+
+def cmd_snapshots(args):
+    from .backup import list_snapshots
+    from .config import SNAPSHOT_DIR
+    snaps = list_snapshots(str(SNAPSHOT_DIR))
+    if not snaps:
+        print("No snapshots found.")
+        return
+    print(f"Snapshots ({len(snaps)}):\n")
+    for s in snaps:
+        print(f"  {s['name']:50s}  {s['size_kb']:>8.1f} KB  {s['created'][:19]}")
+    print(f"\nSnapshot directory: {SNAPSHOT_DIR}")
+
+
+def cmd_restore(args):
+    _require_db()
+    from .backup import restore_snapshot
+    from .config import SNAPSHOT_DIR
+    snapshot_path = args.snapshot
+    if not Path(snapshot_path).exists():
+        # Try as a name in the snapshot dir
+        candidate = SNAPSHOT_DIR / snapshot_path
+        if candidate.exists():
+            snapshot_path = str(candidate)
+        else:
+            print(f"Snapshot not found: {snapshot_path}")
+            sys.exit(1)
+    success = restore_snapshot(snapshot_path, str(DB_PATH), str(SNAPSHOT_DIR))
+    if success:
+        print(f"Restored from {snapshot_path}")
+        print("A pre-restore snapshot was created automatically.")
+    else:
+        print("Restore failed.")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="memory",
@@ -615,6 +672,18 @@ def main():
     p_review.add_argument("action", nargs="?", default="list", help="list, approve, or reject")
     p_review.add_argument("review_id", nargs="?", default="", help="Review item ID (for approve/reject)")
 
+    p_export = sub.add_parser("export", help="Export memory to JSON file")
+    p_export.add_argument("--output", "-o", type=str, default="", help="Output file path")
+    p_export.add_argument("--scope", type=str, default="", help="Filter by scope")
+
+    p_import = sub.add_parser("import", help="Import memory from JSON file")
+    p_import.add_argument("path", help="Path to JSON export file")
+
+    sub.add_parser("snapshots", help="List available database snapshots")
+
+    p_restore = sub.add_parser("restore", help="Restore database from a snapshot")
+    p_restore.add_argument("snapshot", help="Snapshot file path or name")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -634,6 +703,10 @@ def main():
         "consolidate": cmd_consolidate,
         "session-learned": cmd_session_learned,
         "review": cmd_review,
+        "export": cmd_export,
+        "import": cmd_import,
+        "snapshots": cmd_snapshots,
+        "restore": cmd_restore,
     }
     commands[args.command](args)
 

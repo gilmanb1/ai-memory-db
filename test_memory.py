@@ -10647,6 +10647,119 @@ class TestRealEmbeddings1Month(unittest.TestCase):
         self.assertIsInstance(results, list)
 
 
+# ── CLI export/import/restore tests ────────────────────────────────────────
+
+class TestCLIBackupCommands(unittest.TestCase):
+    """Test the CLI export, import, snapshots, and restore subcommands."""
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_fact(
+            self.conn, "CLI backup test fact about DuckDB persistence",
+            "technical", "long", "high",
+            _mock_embed("CLI backup test fact about DuckDB persistence"),
+            "s1", _noop_decay, importance=7,
+        )
+        self.export_path = Path(tempfile.mktemp(suffix=".json"))
+        self.snapshot_dir = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+        self.export_path.unlink(missing_ok=True)
+        shutil.rmtree(self.snapshot_dir, ignore_errors=True)
+
+    def test_cmd_export(self):
+        """Export command should write a JSON file with facts."""
+        from argparse import Namespace
+        import memory.cli as _cli
+        self.conn.close()
+        with patch.object(_cli, 'DB_PATH', self.db_path), \
+             patch.object(_cfg, 'DB_PATH', self.db_path):
+            db._initialised_paths.discard(str(self.db_path))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                _cli.cmd_export(Namespace(output=str(self.export_path), scope=""))
+        self.conn = fresh_conn(self.db_path)
+        self.assertTrue(self.export_path.exists())
+        data = json.loads(self.export_path.read_text())
+        self.assertEqual(data["version"], 1)
+        self.assertGreater(len(data["data"]["facts"]), 0)
+
+    def test_cmd_import(self):
+        """Import command should load facts from a JSON file."""
+        from argparse import Namespace
+        import memory.cli as _cli
+        # First export
+        from memory.backup import export_memory
+        self.conn.close()
+        export_memory(str(self.db_path), str(self.export_path))
+        # Create fresh DB and import
+        new_db = Path(tempfile.mktemp(suffix=".duckdb"))
+        new_conn = fresh_conn(new_db)
+        new_conn.close()
+        with patch.object(_cli, 'DB_PATH', new_db), \
+             patch.object(_cfg, 'DB_PATH', new_db):
+            db._initialised_paths.discard(str(new_db))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                _cli.cmd_import(Namespace(path=str(self.export_path)))
+        # Verify
+        verify = db.get_connection(read_only=True, db_path=str(new_db))
+        count = verify.execute("SELECT COUNT(*) FROM facts WHERE is_active = TRUE").fetchone()[0]
+        verify.close()
+        self.assertGreater(count, 0)
+        new_db.unlink(missing_ok=True)
+        self.conn = fresh_conn(self.db_path)
+
+    def test_cmd_snapshots(self):
+        """Snapshots command should list available snapshots."""
+        from argparse import Namespace
+        import memory.cli as _cli
+        from memory.backup import create_snapshot
+        self.conn.close()
+        create_snapshot(str(self.db_path), str(self.snapshot_dir), "test")
+        with patch.object(_cfg, 'SNAPSHOT_DIR', self.snapshot_dir), \
+             patch.object(_cli, 'DB_PATH', self.db_path), \
+             patch.object(_cfg, 'DB_PATH', self.db_path):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                _cli.cmd_snapshots(Namespace())
+        self.conn = fresh_conn(self.db_path)
+        output = out.getvalue()
+        self.assertIn("knowledge_", output)
+
+    def test_cmd_restore(self):
+        """Restore command should restore DB from a snapshot."""
+        from argparse import Namespace
+        import memory.cli as _cli
+        from memory.backup import create_snapshot
+        self.conn.close()
+        snap = create_snapshot(str(self.db_path), str(self.snapshot_dir), "before")
+        # Add another fact
+        conn2 = fresh_conn(self.db_path)
+        db.upsert_fact(conn2, "New fact after snapshot", "technical", "long", "high",
+                        _mock_embed("New fact after snapshot"), "s2", _noop_decay)
+        conn2.close()
+        # Restore
+        with patch.object(_cfg, 'SNAPSHOT_DIR', self.snapshot_dir), \
+             patch.object(_cli, 'DB_PATH', self.db_path), \
+             patch.object(_cfg, 'DB_PATH', self.db_path):
+            db._initialised_paths.discard(str(self.db_path))
+            out = io.StringIO()
+            with redirect_stdout(out):
+                _cli.cmd_restore(Namespace(snapshot=str(snap)))
+        self.conn = fresh_conn(self.db_path)
+        count = self.conn.execute("SELECT COUNT(*) FROM facts WHERE is_active = TRUE").fetchone()[0]
+        self.assertEqual(count, 1, "Should be back to 1 fact after restore")
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

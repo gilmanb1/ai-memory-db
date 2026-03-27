@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Code2,
   Waypoints,
+  ClipboardCheck,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/sessions", label: "Sessions", icon: Clock },
   { href: "/questions", label: "Open Questions", icon: HelpCircle },
   { href: "/search", label: "Search", icon: Search },
+  { href: "/review", label: "Review Queue", icon: ClipboardCheck },
 ];
 
 export function Sidebar() {

@@ -5,3 +5,4 @@ __pycache__/
 .claude/
 *.log
 bench/LMEB
+.test_embedding_cache.json

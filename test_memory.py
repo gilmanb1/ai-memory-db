@@ -10482,6 +10482,171 @@ class TestScaledCorpus1Year(_ScaledCorpusBase):
     builder = staticmethod(test_corpus_scaled.build_corpus_1y)
 
 
+# ── Real-embedding corpus tests ────────────────────────────────────────────
+#
+# These use ONNX local embeddings instead of mock embeddings.
+# First run generates embeddings (~7s), subsequent runs use cache (~0ms).
+# Skipped if ONNX is unavailable.
+
+import test_embeddings_cache
+
+
+def _real_noop_decay(last_seen_at, session_count, temporal_class):
+    return 1.0
+
+
+@unittest.skipUnless(test_embeddings_cache.is_available(), "ONNX embeddings not available")
+class TestRealEmbeddingsHandCrafted(unittest.TestCase):
+    """Hand-crafted corpus with real ONNX embeddings — tests semantic recall quality."""
+
+    @classmethod
+    def setUpClass(cls):
+        test_corpus.set_helpers(test_embeddings_cache.cached_embed, _real_noop_decay)
+
+    @classmethod
+    def tearDownClass(cls):
+        test_embeddings_cache.flush_cache()
+        # Restore mock helpers for subsequent test classes
+        test_corpus.set_helpers(_mock_embed, _noop_decay)
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.meta = test_corpus.build_corpus(self.conn, db)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def _prompt(self, prompt_text, scope=None):
+        scope = scope or test_corpus.SCOPE_BACKEND
+        query_emb = test_embeddings_cache.cached_embed(prompt_text)
+        if not query_emb:
+            return ""
+        self.conn.close()
+        try:
+            with patch.object(_cfg, 'DB_PATH', self.db_path), \
+                 patch("memory.embeddings.embed", side_effect=test_embeddings_cache.cached_embed), \
+                 patch("memory.embeddings.embed_query", side_effect=test_embeddings_cache.cached_embed):
+                conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+                try:
+                    ctx = recall.prompt_recall(conn, query_emb, prompt_text, scope=scope,
+                                               db_path=str(self.db_path))
+                finally:
+                    conn.close()
+        finally:
+            self.conn = fresh_conn(self.db_path)
+        text, _ = recall.format_prompt_context(ctx)
+        return text
+
+    def test_duckdb_query_finds_duckdb_facts(self):
+        """With real embeddings, DuckDB query should semantically match DuckDB facts."""
+        ctx = self._prompt("How does DuckDB handle concurrent writes?")
+        self.assertIn("single-writer", ctx,
+                       "Real embeddings should find DuckDB concurrency fact")
+
+    def test_auth_query_finds_jwt_facts(self):
+        """Auth query should find JWT/authentication facts."""
+        ctx = self._prompt("How does authentication work in the API?")
+        has = "JWT" in ctx or "httpOnly" in ctx or "auth" in ctx.lower()
+        self.assertTrue(has, f"Auth facts missing with real embeddings: {ctx[:500]}")
+
+    def test_unrelated_query_excludes_duckdb(self):
+        """CSS styling query should NOT return DuckDB internals."""
+        ctx = self._prompt("How do I style a button with Tailwind CSS?",
+                           scope=test_corpus.SCOPE_FRONTEND)
+        self.assertNotIn("single-writer concurrency", ctx)
+
+    def test_terraform_query_finds_infra(self):
+        """Infra query should find Terraform facts."""
+        ctx = self._prompt("How is the cloud infrastructure managed?",
+                           scope=test_corpus.SCOPE_INFRA)
+        has = "Terraform" in ctx or "EKS" in ctx or "AWS" in ctx
+        self.assertTrue(has, f"Infra facts missing: {ctx[:500]}")
+
+    def test_error_query_finds_solution(self):
+        """Error message should match the stored error solution."""
+        ctx = self._prompt("I'm getting a DuckDB IOException about not being able to set a lock on the database file")
+        has = "blocking process" in ctx or "lock" in ctx.lower()
+        self.assertTrue(has, f"Error solution missing: {ctx[:500]}")
+
+    def test_deployment_finds_procedure(self):
+        """Deploy question should find the deployment procedure."""
+        ctx = self._prompt("How do I deploy the backend service to production?")
+        has = "Docker" in ctx or "kubectl" in ctx or "deploy" in ctx.lower() or "Procedure" in ctx
+        self.assertTrue(has, f"Deploy procedure missing: {ctx[:500]}")
+
+    def test_guardrail_surfaces_for_protected_file(self):
+        """Mentioning a guardrailed file should surface the guardrail."""
+        ctx = self._prompt("I want to refactor the retry and connection logic in memory/db.py")
+        has = "retry logic" in ctx or "Guardrail" in ctx or "concurrency tests" in ctx
+        self.assertTrue(has, f"Guardrail missing for db.py: {ctx[:500]}")
+
+    def test_session_recall_has_semantic_relevance(self):
+        """Session recall with real embeddings should include relevant long-term facts."""
+        ctx = recall.session_recall(self.conn, scope=test_corpus.SCOPE_BACKEND)
+        text, stats = recall.format_session_context(ctx)
+        self.assertIn("single-writer", text)
+        self.assertIn("Guardrails", text)
+
+
+@unittest.skipUnless(test_embeddings_cache.is_available(), "ONNX embeddings not available")
+class TestRealEmbeddings1Month(unittest.TestCase):
+    """1-month scaled corpus with real embeddings."""
+
+    @classmethod
+    def setUpClass(cls):
+        test_corpus_scaled.set_helpers(test_embeddings_cache.cached_embed, _real_noop_decay)
+
+    @classmethod
+    def tearDownClass(cls):
+        test_embeddings_cache.flush_cache()
+        test_corpus_scaled.set_helpers(_mock_embed, _noop_decay)
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        self.meta = test_corpus_scaled.build_corpus_1m(self.conn, db)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_session_recall_nonempty(self):
+        scope = self.meta["scopes"][0]
+        ctx = recall.session_recall(self.conn, scope=scope)
+        text, stats = recall.format_session_context(ctx)
+        self.assertGreater(len(text), 100)
+        self.assertGreater(stats["included"], 0)
+
+    def test_semantic_search_returns_results(self):
+        """Real embeddings should produce semantic search results."""
+        query_emb = test_embeddings_cache.cached_embed("database connection configuration")
+        if query_emb:
+            results = db.search_facts(self.conn, query_emb, limit=5, threshold=0.3)
+            self.assertGreater(len(results), 0, "Semantic search should find related facts")
+
+    def test_deactivated_excluded(self):
+        scope = self.meta["scopes"][0]
+        ctx = recall.session_recall(self.conn, scope=scope)
+        text, _ = recall.format_session_context(ctx)
+        dead = self.conn.execute("SELECT text FROM facts WHERE is_active = FALSE").fetchall()
+        for (dead_text,) in dead:
+            self.assertNotIn(dead_text, text)
+
+    def test_bm25_works_with_real_data(self):
+        results = db.search_bm25(self.conn, "facts", "connection", "text", "id, text", 5)
+        self.assertIsInstance(results, list)
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

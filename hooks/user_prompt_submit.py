@@ -141,6 +141,23 @@ def _handle_remember(prompt_text: str, payload: dict) -> None:
     finally:
         conn.close()
 
+    # Check for similar existing facts that might contradict or duplicate
+    similar_warning = ""
+    if is_new and emb and item_type in ("fact", "decision"):
+        try:
+            check_conn = db.get_connection(read_only=True)
+            try:
+                similar = db.search_facts(check_conn, emb, limit=3, threshold=0.75, scope=scope)
+                near_matches = [s for s in similar if s.get("id") != item_id and s.get("score", 0) > 0.75]
+                if near_matches:
+                    similar_warning = "\n\n### Similar existing facts (check for contradictions)"
+                    for s in near_matches[:3]:
+                        similar_warning += f"\n- [{s.get('score', 0):.2f}] {s['text'][:100]}"
+            finally:
+                check_conn.close()
+        except Exception:
+            pass
+
     # Build confirmation
     action = "Stored" if is_new else "Reinforced"
     scope_label = "global" if scope == GLOBAL_SCOPE else Path(scope).name
@@ -149,6 +166,7 @@ def _handle_remember(prompt_text: str, payload: dict) -> None:
         f"- **{action}** {item_type}: {text}\n"
         f"- **Scope:** {scope_label}\n"
         f"- **ID:** `{item_id[:12]}...`"
+        f"{similar_warning}"
     )
 
     print(json.dumps({"additionalContext": confirmation}))

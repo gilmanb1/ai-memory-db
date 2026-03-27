@@ -54,7 +54,7 @@ echo "ok Memory package installed"
 echo ""
 echo "-> Installing hooks to ${HOOKS_DIR}/ ..."
 mkdir -p "$HOOKS_DIR"
-for hook in pre_compact session_start session_end user_prompt_submit status_line _extract_worker remember_cmd forget_cmd reflect_cmd memory_mcp_server post_tool_use knowledge_cmd recalled_cmd; do
+for hook in pre_compact session_start session_end user_prompt_submit status_line _extract_worker remember_cmd forget_cmd reflect_cmd memory_mcp_server post_tool_use knowledge_cmd recalled_cmd audit_cmd health_cmd; do
   cp "$SCRIPT_DIR/hooks/${hook}.py" "${HOOKS_DIR}/${hook}.py"
   chmod +x "${HOOKS_DIR}/${hook}.py"
   echo "  ok ${hook}.py"
@@ -64,7 +64,7 @@ done
 echo ""
 echo "-> Installing slash commands to ~/.claude/commands/ ..."
 mkdir -p "$HOME/.claude/commands"
-for cmd in remember forget forget-confirm memories facts search-memory decisions entities relationships sessions scopes reflect knowledge recalled session-learned review export-memory import-memory restore-memory snapshots; do
+for cmd in remember forget forget-confirm memories facts search-memory decisions entities relationships sessions scopes reflect knowledge recalled session-learned review export-memory import-memory restore-memory snapshots audit-memory memory-health; do
   cp "$SCRIPT_DIR/commands/${cmd}.md" "$HOME/.claude/commands/${cmd}.md"
   echo "  ok ${cmd}.md"
 done

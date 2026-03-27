@@ -10334,6 +10334,8 @@ class _ScaledCorpusBase(unittest.TestCase):
     __test__ = False  # Prevent pytest from collecting the base class directly
 
     def setUp(self):
+        if self.__class__.builder is None:
+            self.skipTest("Abstract base class — run via subclass")
         self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
         self.conn = fresh_conn(self.db_path)
         self.meta = self.__class__.builder(self.conn, db)

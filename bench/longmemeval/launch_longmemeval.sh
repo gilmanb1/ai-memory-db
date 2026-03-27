@@ -11,10 +11,10 @@
 #
 set -euo pipefail
 
-PROFILE="personal"
+PROFILE="${AWS_PROFILE:-default}"
 REGION="us-east-1"
-KEY_NAME="bench-key"
-KEY_FILE="$HOME/.ssh/bench-key.pem"
+KEY_NAME="${BENCH_KEY_NAME:-bench-key}"
+KEY_FILE="${BENCH_KEY_FILE:-$HOME/.ssh/bench-key.pem}"
 SG_NAME="bench-sg"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INSTANCE_TYPE="c5.2xlarge"

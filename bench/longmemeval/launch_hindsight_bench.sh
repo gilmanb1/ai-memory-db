@@ -6,14 +6,14 @@
 #
 set -euo pipefail
 
-PROFILE="personal"
+PROFILE="${AWS_PROFILE:-default}"
 REGION="us-east-1"
-KEY_NAME="bench-key"
-KEY_FILE="$HOME/.ssh/bench-key.pem"
+KEY_NAME="${BENCH_KEY_NAME:-bench-key}"
+KEY_FILE="${BENCH_KEY_FILE:-$HOME/.ssh/bench-key.pem}"
 SG_NAME="bench-sg"
 HINDSIGHT_DIR="$HOME/projects/hindsight"
 INSTANCE_TYPE="g5.xlarge"
-AMI_ID="ami-0fb19e4efa5b16a03"  # Deep Learning Base AMI
+AMI_ID="${BENCH_AMI_ID:-}"  # Deep Learning Base AMI
 
 echo "=== Hindsight LongMemEval Benchmark — g5.xlarge ==="
 

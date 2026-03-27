@@ -2,9 +2,9 @@
 # pull_and_terminate.sh — Pull LMEB results from EC2 and terminate
 set -euo pipefail
 
-PROFILE="personal"
+PROFILE="${AWS_PROFILE:-default}"
 REGION="us-east-1"
-KEY_FILE="$HOME/.ssh/bench-key.pem"
+KEY_FILE="${BENCH_KEY_FILE:-$HOME/.ssh/bench-key.pem}"
 INSTANCE_ID=$(cat /tmp/lmeb_instance_id 2>/dev/null || echo "")
 PUBLIC_IP=$(cat /tmp/lmeb_instance_ip 2>/dev/null || echo "")
 

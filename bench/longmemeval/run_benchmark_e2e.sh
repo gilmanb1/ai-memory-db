@@ -19,9 +19,9 @@ set -u
 # Note: -e and pipefail intentionally omitted — grep returning no matches (exit 1) must not kill the script
 
 # ── Configuration ────────────────────────────────────────────────────────
-PROFILE="personal"
+PROFILE="${AWS_PROFILE:-default}"
 REGION="us-east-1"
-KEY_FILE="$HOME/.ssh/bench-key.pem"
+KEY_FILE="${BENCH_KEY_FILE:-$HOME/.ssh/bench-key.pem}"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/bench/longmemeval/results"
 CHECK_INTERVAL=300  # seconds between progress checks

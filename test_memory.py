@@ -9691,7 +9691,7 @@ class TestExtractionValidation(unittest.TestCase):
 
     def test_rejects_bare_file_path(self):
         from memory.validation import validate_knowledge
-        knowledge = {"facts": [{"text": "/Users/gilmanb/projects/ai-memory-db/memory/db.py",
+        knowledge = {"facts": [{"text": "/home/user/projects/myproject/memory/db.py",
                                 "confidence": "medium", "importance": 3, "category": "technical",
                                 "temporal_class": "short"}]}
         cleaned, flagged = validate_knowledge(knowledge)

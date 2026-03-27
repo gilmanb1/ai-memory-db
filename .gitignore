@@ -6,3 +6,9 @@ __pycache__/
 *.log
 bench/LMEB
 .test_embedding_cache.json
+.env
+.env.local
+.env.*.local
+node_modules/
+.next/
+out/

@@ -8,15 +8,15 @@
 #
 set -euo pipefail
 
-PROFILE="personal"
+PROFILE="${AWS_PROFILE:-default}"
 REGION="us-east-1"
-KEY_NAME="bench-key"
-KEY_FILE="$HOME/.ssh/bench-key.pem"
+KEY_NAME="${BENCH_KEY_NAME:-bench-key}"
+KEY_FILE="${BENCH_KEY_FILE:-$HOME/.ssh/bench-key.pem}"
 SG_NAME="bench-sg"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTANCE_TYPE="g5.xlarge"
 # Deep Learning Base AMI with NVIDIA drivers (Amazon Linux 2023)
-AMI_ID="ami-0fb19e4efa5b16a03"
+AMI_ID="${BENCH_AMI_ID:-}"
 
 echo "=== LMEB GPU Benchmark — g5.xlarge + direct sentence-transformers ==="
 echo ""

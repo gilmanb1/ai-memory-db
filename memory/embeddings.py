@@ -40,14 +40,22 @@ def _init_onnx() -> bool:
         from transformers import AutoTokenizer
         from huggingface_hub import hf_hub_download
 
-        model_path = hf_hub_download(
-            "nomic-ai/nomic-embed-text-v1.5", "onnx/model.onnx",
-        )
+        # Try local cache first to avoid network requests on every call
+        try:
+            model_path = hf_hub_download(
+                "nomic-ai/nomic-embed-text-v1.5", "onnx/model.onnx",
+                local_files_only=True,
+            )
+        except Exception:
+            # Not cached yet — download once
+            model_path = hf_hub_download(
+                "nomic-ai/nomic-embed-text-v1.5", "onnx/model.onnx",
+            )
         _onnx_session = ort.InferenceSession(
             model_path,
             providers=["CPUExecutionProvider"],
         )
-        _onnx_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        _onnx_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
         _onnx_available = True
         return True
     except Exception as e:

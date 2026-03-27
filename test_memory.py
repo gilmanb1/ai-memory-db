@@ -11062,6 +11062,323 @@ class TestGuardrailPromotion(unittest.TestCase):
         self.assertIn("guardrail", output.lower())
 
 
+# ── Cross-repo isolation tests ─────────────────────────────────────────────
+#
+# Simulates multiple repos/worktrees sharing one DuckDB, verifying that
+# facts, guardrails, decisions, etc. from repo A never leak into repo B's
+# session or prompt recall.
+
+class TestCrossRepoIsolation(unittest.TestCase):
+    """
+    GIVEN a shared DuckDB with data from 3 different repos
+    WHEN session_recall or prompt_recall runs scoped to one repo
+    THEN only that repo's items + global items appear — never another repo's items
+    """
+
+    REPO_A = "/home/user/projects/payments-service"
+    REPO_B = "/home/user/projects/admin-dashboard"
+    REPO_C = "/home/user/projects/ml-pipeline"
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+        # ── Repo A: payments service ──────────────────────────────────
+        db.upsert_fact(
+            self.conn, "Payments service uses Stripe API for credit card processing",
+            "architecture", "long", "high",
+            _mock_embed("Payments service uses Stripe API for credit card processing"),
+            "sess-a1", _noop_decay, scope=self.REPO_A, importance=9,
+        )
+        db.upsert_fact(
+            self.conn, "PCI compliance requires tokenizing card numbers before storage",
+            "constraint", "long", "high",
+            _mock_embed("PCI compliance requires tokenizing card numbers before storage"),
+            "sess-a1", _noop_decay, scope=self.REPO_A, importance=10,
+        )
+        db.upsert_decision(
+            self.conn, "Use Stripe webhooks for payment status instead of polling",
+            "long", _mock_embed("Use Stripe webhooks for payment status"),
+            "sess-a1", _noop_decay, scope=self.REPO_A,
+        )
+        db.upsert_guardrail(
+            self.conn, warning="Never log raw credit card numbers",
+            rationale="PCI DSS violation", consequence="Massive fines and data breach",
+            file_paths=["payments/processor.py"],
+            embedding=_mock_embed("Never log raw credit card numbers"),
+            session_id="sess-a1", scope=self.REPO_A,
+        )
+        db.upsert_error_solution(
+            self.conn, error_pattern="Stripe::CardError: Your card was declined",
+            solution="Check card details, retry with different payment method",
+            embedding=_mock_embed("Stripe CardError card declined"),
+            session_id="sess-a1", scope=self.REPO_A,
+        )
+
+        # ── Repo B: admin dashboard ──────────────────────────────────
+        db.upsert_fact(
+            self.conn, "Admin dashboard uses React Admin with Material UI components",
+            "architecture", "long", "high",
+            _mock_embed("Admin dashboard uses React Admin with Material UI components"),
+            "sess-b1", _noop_decay, scope=self.REPO_B, importance=8,
+        )
+        db.upsert_fact(
+            self.conn, "Admin users authenticate via SAML SSO with Okta",
+            "architecture", "long", "high",
+            _mock_embed("Admin users authenticate via SAML SSO with Okta"),
+            "sess-b1", _noop_decay, scope=self.REPO_B, importance=8,
+        )
+        db.upsert_guardrail(
+            self.conn, warning="Never expose admin endpoints without SAML authentication",
+            rationale="Admin has full data access", consequence="Unauthorized data access",
+            file_paths=["admin/routes.py"],
+            embedding=_mock_embed("Never expose admin endpoints without SAML"),
+            session_id="sess-b1", scope=self.REPO_B,
+        )
+
+        # ── Repo C: ML pipeline ──────────────────────────────────────
+        db.upsert_fact(
+            self.conn, "ML pipeline uses PyTorch for model training on GPU instances",
+            "architecture", "long", "high",
+            _mock_embed("ML pipeline uses PyTorch for model training on GPU instances"),
+            "sess-c1", _noop_decay, scope=self.REPO_C, importance=8,
+        )
+        db.upsert_fact(
+            self.conn, "Training data is stored in S3 bucket ml-training-data-prod",
+            "operational", "long", "high",
+            _mock_embed("Training data stored in S3 bucket ml-training-data-prod"),
+            "sess-c1", _noop_decay, scope=self.REPO_C, importance=7,
+        )
+
+        # ── Global facts (should appear in ALL repos) ────────────────
+        db.upsert_fact(
+            self.conn, "All services must log to CloudWatch with structured JSON format",
+            "operational", "long", "high",
+            _mock_embed("All services must log to CloudWatch with structured JSON"),
+            "sess-g1", _noop_decay, scope="__global__", importance=8,
+        )
+        db.upsert_fact(
+            self.conn, "The team uses trunk-based development with short-lived feature branches",
+            "user_preference", "long", "high",
+            _mock_embed("trunk-based development short-lived feature branches"),
+            "sess-g1", _noop_decay, scope="__global__", importance=7,
+        )
+        db.upsert_guardrail(
+            self.conn, warning="Never commit secrets or API keys to git",
+            rationale="Security policy", consequence="Credential exposure",
+            embedding=_mock_embed("Never commit secrets or API keys to git"),
+            session_id="sess-g1", scope="__global__",
+        )
+
+        # Build FTS indexes
+        db.rebuild_fts_indexes(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    # ── Session recall isolation ──────────────────────────────────────
+
+    def test_repo_a_session_gets_payments_facts(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_A)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("Stripe API", text)
+        self.assertIn("PCI compliance", text)
+
+    def test_repo_a_session_excludes_admin_facts(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_A)
+        text, _ = recall.format_session_context(ctx)
+        self.assertNotIn("React Admin", text)
+        self.assertNotIn("SAML SSO", text)
+        self.assertNotIn("Okta", text)
+
+    def test_repo_a_session_excludes_ml_facts(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_A)
+        text, _ = recall.format_session_context(ctx)
+        self.assertNotIn("PyTorch", text)
+        self.assertNotIn("ml-training-data", text)
+
+    def test_repo_b_session_gets_admin_facts(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_B)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("React Admin", text)
+        self.assertIn("SAML SSO", text)
+
+    def test_repo_b_session_excludes_payments_facts(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_B)
+        text, _ = recall.format_session_context(ctx)
+        self.assertNotIn("Stripe API", text)
+        self.assertNotIn("credit card", text.lower())
+
+    def test_repo_c_session_gets_ml_facts(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_C)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("PyTorch", text)
+
+    def test_repo_c_session_excludes_other_repos(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_C)
+        text, _ = recall.format_session_context(ctx)
+        self.assertNotIn("Stripe", text)
+        self.assertNotIn("React Admin", text)
+        self.assertNotIn("SAML", text)
+
+    # ── Global facts in all repos ────────────────────────────────────
+
+    def test_global_facts_in_repo_a(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_A)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("CloudWatch", text)
+
+    def test_global_facts_in_repo_b(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_B)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("CloudWatch", text)
+
+    def test_global_facts_in_repo_c(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_C)
+        text, _ = recall.format_session_context(ctx)
+        self.assertIn("CloudWatch", text)
+
+    # ── Guardrail isolation ──────────────────────────────────────────
+
+    def test_repo_a_guardrail_not_in_repo_b(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_B)
+        text, _ = recall.format_session_context(ctx)
+        self.assertNotIn("credit card numbers", text)
+
+    def test_repo_b_guardrail_not_in_repo_a(self):
+        ctx = recall.session_recall(self.conn, scope=self.REPO_A)
+        text, _ = recall.format_session_context(ctx)
+        self.assertNotIn("SAML authentication", text)
+
+    def test_global_guardrail_in_all_repos(self):
+        for scope in [self.REPO_A, self.REPO_B, self.REPO_C]:
+            ctx = recall.session_recall(self.conn, scope=scope)
+            text, _ = recall.format_session_context(ctx)
+            self.assertIn("secrets", text.lower() + " " + str(ctx.get("guardrails", "")),
+                          f"Global guardrail about secrets missing in {scope}")
+
+    # ── Prompt recall isolation ──────────────────────────────────────
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    def test_prompt_in_repo_a_no_admin_leakage(self, _eq, _emb):
+        """Asking about authentication in repo A should NOT surface SAML/Okta from repo B."""
+        self.conn.close()
+        try:
+            with patch.object(_cfg, 'DB_PATH', self.db_path):
+                conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+                try:
+                    query_emb = _mock_embed("How does authentication work in this service?")
+                    ctx = recall.prompt_recall(conn, query_emb,
+                                               "How does authentication work in this service?",
+                                               scope=self.REPO_A, db_path=str(self.db_path))
+                finally:
+                    conn.close()
+        finally:
+            self.conn = fresh_conn(self.db_path)
+        text, _ = recall.format_prompt_context(ctx)
+        self.assertNotIn("SAML", text)
+        self.assertNotIn("Okta", text)
+
+    @patch("memory.embeddings.embed", side_effect=_mock_embed)
+    @patch("memory.embeddings.embed_query", side_effect=_mock_embed)
+    def test_prompt_in_repo_b_no_payments_leakage(self, _eq, _emb):
+        """Asking about APIs in repo B should NOT surface Stripe from repo A."""
+        self.conn.close()
+        try:
+            with patch.object(_cfg, 'DB_PATH', self.db_path):
+                conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+                try:
+                    query_emb = _mock_embed("How do we handle API integrations?")
+                    ctx = recall.prompt_recall(conn, query_emb,
+                                               "How do we handle API integrations?",
+                                               scope=self.REPO_B, db_path=str(self.db_path))
+                finally:
+                    conn.close()
+        finally:
+            self.conn = fresh_conn(self.db_path)
+        text, _ = recall.format_prompt_context(ctx)
+        self.assertNotIn("Stripe", text)
+        self.assertNotIn("credit card", text.lower())
+
+    # ── Decision isolation ───────────────────────────────────────────
+
+    def test_decisions_scoped(self):
+        """Decisions from repo A should not appear in repo B session."""
+        ctx_b = recall.session_recall(self.conn, scope=self.REPO_B)
+        text_b, _ = recall.format_session_context(ctx_b)
+        self.assertNotIn("Stripe webhooks", text_b)
+
+    # ── Error solution isolation ─────────────────────────────────────
+
+    def test_error_solutions_scoped(self):
+        """Error solutions from repo A should not leak to repo B's defensive recall."""
+        # Repo B should not see Stripe errors
+        ctx_b = recall.session_recall(self.conn, scope=self.REPO_B)
+        all_text = str(ctx_b)
+        self.assertNotIn("Stripe::CardError", all_text)
+
+    # ── Scope filter correctness ─────────────────────────────────────
+
+    def test_scope_filter_sql(self):
+        """_scope_filter should produce correct SQL for a project scope."""
+        sql, params = db._scope_filter(self.REPO_A)
+        self.assertIn("scope = ?", sql)
+        self.assertIn("__global__", params)
+        self.assertIn(self.REPO_A, params)
+
+    def test_scope_filter_none_returns_all(self):
+        """scope=None should return no filter (all scopes)."""
+        sql, params = db._scope_filter(None)
+        self.assertEqual(sql, "")
+        self.assertEqual(params, [])
+
+    def test_no_scope_returns_everything(self):
+        """Session recall with scope=None should include items from all repos."""
+        ctx = recall.session_recall(self.conn, scope=None)
+        text, _ = recall.format_session_context(ctx)
+        # Should have facts from multiple repos
+        has_payments = "Stripe" in text
+        has_admin = "React Admin" in text
+        has_ml = "PyTorch" in text
+        has_global = "CloudWatch" in text
+        # At least global + some repo items should appear
+        self.assertTrue(has_global, "Global facts should appear with no scope filter")
+
+    # ── Direct query isolation ───────────────────────────────────────
+
+    def test_direct_query_scoped(self):
+        """Direct queries should respect scope."""
+        _try = _import_chat_direct_query()
+        result = _try(self.conn, "Show me the 5 most recent facts", self.REPO_A)
+        if result:
+            self.assertNotIn("React Admin", result)
+            self.assertNotIn("PyTorch", result)
+
+    # ── Knowledge graph isolation ────────────────────────────────────
+
+    def test_knowledge_graph_scoped(self):
+        """Knowledge graph should respect scope parameter."""
+        build = _import_build_knowledge_graph()
+        self.conn.close()
+        conn = db.get_connection(read_only=True, db_path=str(self.db_path))
+        try:
+            result = build(conn, types=["fact"], limit=50, cluster_by="type",
+                           scope=self.REPO_A)
+        finally:
+            conn.close()
+        self.conn = fresh_conn(self.db_path)
+
+        fact_texts = " ".join(n["label"] for n in result["nodes"] if n["node_type"] == "fact")
+        self.assertNotIn("React Admin", fact_texts)
+        self.assertNotIn("PyTorch", fact_texts)
+
+
 if __name__ == "__main__":
     loader  = unittest.TestLoader()
     suite   = loader.loadTestsFromModule(sys.modules[__name__])

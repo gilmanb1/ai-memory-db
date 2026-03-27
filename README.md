@@ -1,187 +1,152 @@
 # Claude Code Memory System
 
-Persistent, evolving knowledge base for Claude Code. Conversations are automatically mined for facts, ideas, relationships, and decisions. That knowledge lives in a local DuckDB database, enriched with Ollama embeddings, and injected back into future sessions — scoped per project with automatic cross-project promotion.
+Persistent knowledge base for Claude Code. Hooks extract facts, decisions, relationships, and more from conversations, store them in DuckDB with local embeddings, and inject relevant context into future sessions. Knowledge is scoped per git repo with automatic cross-project promotion.
 
-## Architecture
+## Quick Start
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Claude Code Session                          │
-│                                                                     │
-│  ┌───────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
-│  │ User      │  │ Claude       │  │ Status Bar   │  │ MCP Tools │ │
-│  │ Prompts   │  │ Responses    │  │ "mem: 45%"   │  │ (on-demand│ │
-│  └─────┬─────┘  └──────────────┘  └──────┬───────┘  └─────┬─────┘ │
-│        │                                  │                │       │
-└────────┼──────────────────────────────────┼────────────────┼───────┘
-         │                                  │                │
-    HOOKS│(automatic)                       │           MCP SERVER
-         │                                  │           (stdio/JSON-RPC)
-         ▼                                  ▼                ▼
-┌─────────────────┐  ┌──────────────────┐  ┌─────────────────────────┐
-│ SESSION START   │  │ STATUS LINE      │  │ memory_mcp_server.py    │
-│                 │  │ (every ~10-30s)  │  │                         │
-│ • session_recall│  │ • Show ctx %     │  │ Tools:                  │
-│ • Inject long/  │  │ • Trigger extract│  │ • memory_search         │
-│   medium facts  │  │   at 40/70/90%   │  │ • memory_store          │
-│ • systemMessage │  │ • Prefetch next  │  │ • memory_guardrail      │
-│   output        │  │   prompt context │  │ • memory_check_file     │
-└─────────────────┘  └────────┬─────────┘  └────────────┬────────────┘
-                              │                         │
-┌─────────────────┐           │                         │
-│ USER PROMPT     │           │                         │
-│ SUBMIT          │           │                         │
-│                 │           │                         │
-│ If /remember:   │           │                         │
-│ • Parse prefix  │           │                         │
-│ • Embed & store │           │                         │
-│                 │           │                         │
-│ If normal:      │           │                         │
-│ • prompt_recall │           │                         │
-│ • Semantic srch │           │                         │
-│ • addtlContext  │           │                         │
-│   output        │           │                         │
-└─────────────────┘           │                         │
-                              │                         │
-┌─────────────────┐  ┌────────▼─────────┐              │
-│ PRE-COMPACT     │  │ _extract_worker  │              │
-│ (before compact)│  │ (background)     │              │
-│                 │  │                  │              │
-│ • Final extract │  │ • Acquire lock   │              │
-│ • is_final=True │  │ • Parse delta    │              │
-└─────────────────┘  │ • Claude extract │              │
-                     │ • Embed & upsert │              │
-┌─────────────────┐  │ • Consolidate    │              │
-│ SESSION END     │  │ • Decay pass     │              │
-│                 │  │ • Purge deleted  │              │
-│ • Spawn worker  │  │ • Save state     │              │
-│   --final       │──▶                  │              │
-│ • Detached bg   │  └────────┬─────────┘              │
-└─────────────────┘           │                         │
-                              │                         │
-                              ▼                         ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        memory/ package                              │
-│                                                                     │
-│  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────────────┐ │
-│  │config.py │  │embeddings.py│  │extract.py│  │extraction_state.py│ │
-│  │thresholds│  │ONNX/Ollama │  │Claude API│  │per-session locks │ │
-│  │budgets   │  │768-dim vecs│  │tool_use  │  │pass tracking     │ │
-│  └──────────┘  └─────┬──────┘  └────┬─────┘  └──────────────────┘ │
-│                      │              │                               │
-│  ┌──────────┐  ┌─────▼──────┐  ┌────▼─────┐  ┌──────────────────┐ │
-│  │recall.py │  │  ingest.py │  │  db.py   │  │ routing.py       │ │
-│  │session + │  │ incremental│  │ DuckDB   │  │ /remember →      │ │
-│  │prompt    │  │ multi-pass │  │ upsert   │  │   classify &     │ │
-│  │retrieval │  │ pipeline   │  │ search   │  │   route          │ │
-│  └──────────┘  └────────────┘  │ dedup    │  └──────────────────┘ │
-│                                │ decay    │                        │
-│  ┌──────────────┐  ┌─────┐    │ scope    │  ┌──────────────────┐ │
-│  │consolidation │  │decay│    └────┬─────┘  │  communities.py  │ │
-│  │observations  │  │score│         │        │  entity clusters  │ │
-│  └──────────────┘  └─────┘         │        └──────────────────┘ │
-└────────────────────────────────────┼────────────────────────────────┘
-                                     │
-                                     ▼
-                    ┌────────────────────────────────┐
-                    │  ~/.claude/memory/knowledge.duckdb  │
-                    │                                │
-                    │  Tables:                       │
-                    │  • facts      • entities       │
-                    │  • decisions  • relationships   │
-                    │  • guardrails • procedures      │
-                    │  • error_solutions              │
-                    │  • observations • communities   │
-                    │                                │
-                    │  HNSW vector indexes (768-dim)  │
-                    │  Scope: per-repo + __global__   │
-                    └────────────────────────────────┘
+```bash
+# 1. Prerequisites
+curl -LsSf https://astral.sh/uv/install.sh | sh   # Python script runner
+ollama pull nomic-embed-text                        # Local embedding model
+export ANTHROPIC_API_KEY="sk-ant-..."               # For knowledge extraction
+
+# 2. Install (all Claude Code sessions)
+bash install.sh
+
+# 3. Restart Claude Code — memory is now active
 ```
 
-Hooks (left) handle **passive/automatic** capture — extraction runs in the background at context thresholds and session boundaries. The MCP server (right) gives Claude **on-demand** read/write access to the same DB. Both converge on the same `memory/` package and DuckDB database.
+That's it. The system runs automatically via hooks. No manual steps during normal use.
+
+**Platform support:** Linux, macOS, Windows (WSL2). Requires `bash`, `python3 >= 3.11`, `uv`, and `ollama`.
 
 ## How It Works
 
-Three extraction triggers ensure knowledge is captured before it's lost:
-
-| Trigger | When | How |
-|---------|------|-----|
-| **Status line** | Context window hits 90% | Background process, non-blocking |
-| **PreCompact** | Just before compaction | Inline, prints summary to transcript |
-| **SessionEnd** | Session terminates | Background process, exits within 1.5s |
-
-A per-session lock file prevents duplicate extraction. Whichever trigger fires first wins.
-
-Two injection points make stored knowledge available:
-
-| Hook | What's Injected |
-|------|-----------------|
-| **SessionStart** | Long-term facts, decisions, entities, relationships as `systemMessage` |
-| **UserPromptSubmit** | Per-prompt semantic recall as `additionalContext` |
-
-Both enforce token budgets to avoid context window bloat.
-
-## /remember Command
-
-Type `/remember` in any Claude Code prompt to store something to long-term memory immediately:
-
 ```
-/remember The API uses gRPC for inter-service communication
-/remember global: My name is Ben
-/remember decision: We chose PostgreSQL over MySQL
-/remember global decision: Always use TypeScript for frontend projects
+Session Start ──→ Inject long-term facts, guardrails, decisions as system context
+Every Prompt  ──→ 6-way semantic recall: relevant facts, error solutions, guardrails
+Background    ──→ Extract knowledge at 40%/70%/90% context usage + session end
+Session End   ──→ Auto-snapshot DB, final extraction, consolidation, decay pass
 ```
 
-| Prefix | Effect |
-|--------|--------|
-| *(none)* | Store as fact in current project scope |
-| `global:` | Store as fact in global scope (all projects) |
-| `decision:` | Store as decision in current project scope |
-| `global decision:` | Store as decision in global scope |
+The system is fully automatic. Knowledge builds up over time. Short-term facts decay and are forgotten. Items seen across 3+ sessions promote from short → medium → long term. Items seen across 3+ projects auto-promote to global scope.
 
-All `/remember` items are stored with `temporal_class=long` and `confidence=high`. Duplicate text is reinforced rather than duplicated.
+## Slash Commands
 
-## Project Scoping
+### Knowledge Storage
+| Command | Description |
+|---------|-------------|
+| `/remember <text>` | Store a fact in current project scope |
+| `/remember global: <text>` | Store a fact visible to all projects |
+| `/remember decision: <text>` | Store a decision |
+| `/remember guardrail: <text>` | Store a guardrail (highest recall priority) |
+| `/remember procedure: <text>` | Store a how-to procedure |
+| `/remember error: <pattern> -> <fix>` | Store an error→solution pair |
 
-Knowledge is scoped per git repository. Each repo's facts, decisions, and entities are isolated from other projects.
+### Knowledge Retrieval
+| Command | Description |
+|---------|-------------|
+| `/knowledge <topic>` | Cross-type search: facts, decisions, guardrails, entities, relationships |
+| `/search-memory <query>` | Semantic search with `--type` and `--scope` filters |
+| `/reflect <question>` | Agentic Q&A — iterates search/synthesis up to 6 rounds |
+| `/recalled` | Show what context was injected for the last prompt |
+| `/session-learned [id]` | Show what was extracted from a session |
 
-**Scope resolution:** The system runs `git rev-parse --show-toplevel` to identify the project. Non-git directories use the resolved path.
+### Knowledge Management
+| Command | Description |
+|---------|-------------|
+| `/forget <text>` | Search and soft-delete a memory |
+| `/review` | List/approve/reject flagged extraction items |
+| `/audit-memory` | Quality report: stale facts, contradictions, orphaned entities |
+| `/memory-health` | System health: Ollama, DB locks, snapshots, embeddings, disk |
 
-**Recall priority:** Project-local items fill the token budget first. Global items fill whatever remains.
+### Inspection
+| Command | Description |
+|---------|-------------|
+| `/memories` | Database statistics |
+| `/facts` | List facts (`--class long`, `--limit 20`) |
+| `/decisions` | List decisions |
+| `/entities` | List known entities |
+| `/relationships` | Show entity graph |
+| `/sessions` | List sessions with summaries |
+| `/scopes` | List project scopes and item counts |
 
-**Promotion to global** (shared across all projects):
-
-- **Automatic:** When an item is seen in 3+ distinct projects, it's promoted to `__global__` scope
-- **Manual:** `python -m memory promote facts <uuid>`
-
-## Temporal Memory Model
-
-Each stored item has a `temporal_class` assigned by the LLM at extraction time, then adjusted upward by reinforcement:
-
-| Class | Decay Rate | Auto-forgotten? | Examples |
-|-------|------------|-----------------|----------|
-| `short` | 0.18/day | Yes, when score < 0.05 | Current error, transient debug state |
-| `medium` | 0.04/day | No | Active project phase, current bug |
-| `long` | 0.007/day | No | User's name, tech stack, architecture decisions |
-
-**Promotion rules** (only upward):
-- short -> medium: seen in 3+ sessions, or age > 7 days
-- medium -> long: seen in 7+ sessions, or age > 30 days
-
-**Decay formula:** `score = exp(-base_rate / reinforcement * days_old)` where `reinforcement = min(10, 1 + 0.5 * (sessions - 1))`
+### Backup & Recovery
+| Command | Description |
+|---------|-------------|
+| `/snapshots` | List available DB snapshots |
+| `/export-memory` | Export to portable JSON (`--output path --scope X`) |
+| `/import-memory <path>` | Import from JSON export |
+| `/restore-memory <snapshot>` | Roll back to a snapshot |
 
 ## What Gets Stored
 
-| Type | Volume | Examples |
-|------|--------|----------|
-| **Facts** | 5-25/session | "The project uses DuckDB for storage" |
-| **Ideas** | 2-10/session | "FOXP3 could be a long-horizon target" |
-| **Relationships** | 4-15/session | Focal Graph --[uses]--> DuckDB |
-| **Decisions** | 0-10/session | "We will use Neo4j for graph queries" |
-| **Open questions** | 0-8/session | "Do we have clinical outcome data?" |
-| **Entities** | 4-20/session | "Plex Research", "DuckDB", "FOXP3" |
+| Type | Description | Recall Priority |
+|------|-------------|-----------------|
+| **Guardrails** | "Don't modify X without Y" — protective rules | Highest (always surfaced) |
+| **Error Solutions** | Known error→fix pairs | High |
+| **Procedures** | Step-by-step how-to instructions | High |
+| **Facts** | Technical, architectural, operational knowledge | Medium |
+| **Decisions** | Why X was chosen over Y | Medium |
+| **Observations** | Consolidated insights from multiple facts | Medium |
+| **Entities** | Named concepts, people, technologies | Low |
+| **Relationships** | Entity connections (uses, depends_on, etc.) | Low |
 
-Extraction uses Claude Sonnet via `tool_use` for guaranteed structured output (no JSON parsing failures).
+## Project Scoping
+
+Knowledge is isolated per git repository. Facts from project A never leak into project B's context.
+
+- **Scope resolution:** `git rev-parse --show-toplevel` identifies the project
+- **Recall priority:** Project-local items first, global items fill remaining budget
+- **Auto-promotion:** Items seen in 3+ projects promote to `__global__` scope
+- **Multi-scope:** Set `MEMORY_ADDITIONAL_SCOPES=/other/repo` for cross-repo sessions (e.g., `--add-dir`)
+
+## Retrieval Pipeline
+
+Every prompt triggers 6-way parallel retrieval, fused via Reciprocal Rank Fusion:
+
+| Strategy | What It Finds | Speed |
+|----------|---------------|-------|
+| **Semantic** | Embedding cosine similarity across 9 tables | ~50ms |
+| **BM25** | Keyword/full-text search | ~10ms |
+| **Graph** | Entity traversal (2-hop BFS through relationships) | ~20ms |
+| **Temporal** | Date-range filtering ("last week", "yesterday") | ~5ms |
+| **Path** | File-path matching via fact_file_links | ~10ms |
+| **Code** | Symbol/dependency graph matching | ~15ms |
+
+Results are fused, ranked, and capped at the token budget (4000 tokens per prompt, 3000 per session).
+
+## System Hardening
+
+| Feature | Description |
+|---------|-------------|
+| **Extraction validation** | Rejects bare URLs, meta-commentary, low-confidence items. Flags borderline items for `/review` |
+| **Correction detection** | Detects "that's wrong" / "actually it's..." and auto-supersedes bad facts |
+| **Guardrail enforcement** | PostToolUse hook detects edits to guardrailed files, auto-stashes via git |
+| **Guardrail promotion** | Facts with directive language (always/never) + high reinforcement are proposed as guardrails |
+| **Auto-snapshots** | DB snapshot on every session end (rotating last 5) |
+| **Truncation visibility** | Stderr reports when items are truncated; footer in injected context |
+| **DuckDB concurrency** | Retry with exponential backoff, per-process init caching, read-only optimization |
+
+## Web Dashboard
+
+A full-featured Next.js dashboard for exploring and managing the knowledge base:
+
+```bash
+# Start backend
+cd dashboard/backend && uvicorn server:app --port 9111
+
+# Start frontend
+cd dashboard/frontend && npm run dev
+```
+
+Features:
+- **Per-scope filtering** — dropdown in sidebar filters all pages by project
+- **Knowledge graph** — unified multi-type graph with clustering, heatmap mode, and chat
+- **Review queue** — approve/reject flagged extraction items
+- **CRUD** on all item types — facts, decisions, guardrails, procedures, error solutions
+- **Entity/relationship graph** — colored by type, sized by degree, clustered by edge type
+- **Code graph** — file dependency visualization with symbol details
 
 ## Install
 
@@ -189,148 +154,102 @@ Extraction uses Claude Sonnet via `tool_use` for guaranteed structured output (n
 # Prerequisites
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ollama pull nomic-embed-text
-
-# Ensure ANTHROPIC_API_KEY is set
 export ANTHROPIC_API_KEY="sk-ant-..."
 
-# Install globally (all Claude Code sessions)
+# Install globally (all sessions)
 bash install.sh
 
-# Or install for current project only
+# Install for current project only
 bash install.sh --project
 ```
 
-The installer copies `memory/` to `~/.claude/memory/`, hooks to `~/.claude/hooks/`, configures `settings.json`, and runs the test suite.
+**What the installer does:**
+1. Copies `memory/` package to `~/.claude/memory/`
+2. Copies hook scripts to `~/.claude/hooks/`
+3. Copies 22 slash commands to `~/.claude/commands/`
+4. Configures hooks and status line in `settings.json`
+5. Runs the test suite
 
-Restart Claude Code to activate.
-
-## CLI Inspector
-
-Inspect what's stored in the knowledge base:
-
-```bash
-python -m memory stats              # Database statistics
-python -m memory facts              # List all active facts
-python -m memory facts --class long # Filter by temporal class
-python -m memory search "query"     # Semantic search (requires Ollama)
-python -m memory entities           # List known entities
-python -m memory decisions          # List decisions
-python -m memory relationships      # List relationship graph
-python -m memory sessions           # List stored sessions
-python -m memory scopes             # List project scopes and item counts
-python -m memory promote facts <id> # Promote an item to global scope
-```
+**Platform notes:**
+- **macOS/Linux:** Works out of the box with bash
+- **WSL2:** Works as-is (uses `$HOME/.claude/` which maps correctly)
+- **Optional ONNX:** If `onnxruntime` + `transformers` are installed, embeddings run in-process (~3ms) without needing Ollama
 
 ## Configuration
 
-All constants are in `memory/config.py`:
+Key settings in `memory/config.py` (83 configurable parameters):
 
 ```python
-# Embedding model
-OLLAMA_MODEL      = "nomic-embed-text"   # swap to mxbai-embed-large for higher accuracy
-EMBEDDING_DIM     = 768                  # must match the model
-
-# Extraction
-CLAUDE_MODEL      = "claude-sonnet-4-6"
-
-# Similarity thresholds
-DEDUP_THRESHOLD   = 0.92   # cosine >= this -> reinforce, don't insert
-RECALL_THRESHOLD  = 0.60   # cosine >= this -> relevant for recall
-
-# Token budgets (prevent context window bloat)
-SESSION_TOKEN_BUDGET  = 3000
-PROMPT_TOKEN_BUDGET   = 1500
-
-# Temporal decay
-DECAY_RATES = {"short": 0.18, "medium": 0.04, "long": 0.007}
-
-# Project scoping
-AUTO_PROMOTE_PROJECT_COUNT = 3   # seen in N+ projects -> auto-promote to global
+OLLAMA_MODEL       = "nomic-embed-text"    # Embedding model (768-dim)
+CLAUDE_MODEL       = "claude-sonnet-4-6"   # Extraction LLM
+DEDUP_THRESHOLD    = 0.92                  # Cosine >= this → reinforce, don't duplicate
+RECALL_THRESHOLD   = 0.60                  # Cosine >= this → relevant for recall
+SESSION_TOKEN_BUDGET = 3000                # Max tokens for session context
+PROMPT_TOKEN_BUDGET  = 4000                # Max tokens per-prompt context
+DECAY_RATES = {"short": 0.18, "medium": 0.04, "long": 0.007}  # Per-day exponential
+AUTO_PROMOTE_PROJECT_COUNT = 3             # Seen in N+ projects → global
+EXTRACTION_THRESHOLDS = [40, 70, 90]       # Context % triggers for extraction
+GUARDRAIL_ENFORCEMENT_ENABLED = True       # PostToolUse guardrail checking
+SNAPSHOT_ON_SESSION_END = True             # Auto-snapshot DB
 ```
-
-## Project Structure
-
-```
-memory/                     Python package (installed to ~/.claude/memory/)
-  config.py                   All tuneable constants
-  db.py                       DuckDB schema, migrations, CRUD, vector search
-  decay.py                    Temporal scoring and forgetting
-  embeddings.py               Ollama embedding client with graceful fallback
-  extract.py                  Claude API extraction via tool_use
-  ingest.py                   Shared extraction + storage pipeline
-  recall.py                   Session and prompt recall with token budgets
-  scope.py                    Git-based project scope resolution
-  cli.py                      CLI inspector (python -m memory)
-
-hooks/                      Claude Code hook scripts (installed to ~/.claude/hooks/)
-  pre_compact.py              PreCompact: extract before compaction
-  session_start.py            SessionStart: inject broad context
-  session_end.py              SessionEnd: extract on exit (background)
-  user_prompt_submit.py       UserPromptSubmit: per-prompt recall
-  status_line.py              Status line: trigger extraction at 90% context
-  _extract_worker.py          Background extraction worker
-
-test_memory.py              100 tests (BDD-style, red/green methodology)
-install.sh                  Installer script
-```
-
-## Schema
-
-Single DuckDB file at `~/.claude/memory/knowledge.duckdb` with versioned migrations:
-
-```
-facts              ideas              entities           relationships
-  text               text               name               from_entity
-  category           idea_type          entity_type        to_entity
-  temporal_class     temporal_class     embedding          rel_type
-  confidence         decay_score        session_count      description
-  decay_score        embedding          scope              strength
-  session_count      scope                                 scope
-  embedding
-  scope
-
-decisions          open_questions     sessions           item_scopes
-  text               text               summary            item_id
-  temporal_class     resolved           transcript_path    item_table
-  decay_score        embedding          scope              scope
-  embedding
-  scope
-```
-
-The `scope` column defaults to `__global__`. Project-scoped items use the git repo root path. The `item_scopes` table tracks which projects have seen each item for auto-promotion.
-
-## Schema Migrations
-
-To add a column in a future version, append to the `MIGRATIONS` list in `db.py`:
-
-```python
-(3, "Add fact source_url column", """
-    ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_url VARCHAR;
-"""),
-```
-
-Migrations run once on the next `get_connection()` call and are recorded in `schema_migrations`.
-
-## Changing the Embedding Model
-
-1. Pull the new model: `ollama pull mxbai-embed-large`
-2. Update `config.py`: set `OLLAMA_MODEL` and `EMBEDDING_DIM`
-3. Delete `~/.claude/memory/knowledge.duckdb` (old embeddings are incompatible)
-4. The DB is rebuilt from scratch on the next extraction
 
 ## Tests
 
 ```bash
-python3 test_memory.py
+python3 test_memory.py        # Full suite
+python3 -m pytest test_memory.py -k "TestCorpus" -v  # Corpus tests only
 ```
 
-100 tests against real DuckDB instances. No Ollama or Anthropic API required — embeddings are mocked with deterministic hash-based vectors. Tests use BDD-style `given_when_then` naming and red/green methodology.
+809 tests covering:
+- Unit tests with mock embeddings (fast, no external deps)
+- Integration tests exercising full hook pipelines
+- Realistic corpus tests (hand-crafted 6-week corpus + scaled 1d/1w/1m/1y corpuses)
+- Real ONNX embedding tests (semantic similarity verification)
+- Cross-repo scope isolation tests (22 tests proving no contamination)
+- Concurrency tests (multi-process DuckDB lock handling)
+
+## Project Structure
+
+```
+memory/                     Python package
+  config.py                   83 configurable constants
+  db.py                       DuckDB schema (11 migrations), CRUD, vector search
+  embeddings.py               ONNX (primary) + Ollama (fallback) embeddings
+  extract.py                  Claude API extraction via tool_use
+  ingest.py                   Multi-pass extraction pipeline with validation
+  recall.py                   Session + prompt recall with token budgets
+  retrieval.py                6-way parallel retrieval with RRF fusion
+  scope.py                    Git-based scope resolution + multi-scope
+  decay.py                    Temporal scoring and forgetting
+  consolidation.py            Observation synthesis + coherence checking
+  communities.py              Entity clustering via union-find
+  validation.py               Extraction quality gates + review queue
+  corrections.py              User correction detection + auto-supersede
+  backup.py                   Snapshots, export/import, restore
+  guardrail_check.py          File-edit guardrail enforcement
+  guardrail_promotion.py      Auto-detect facts that should be guardrails
+  cli.py                      CLI (python -m memory)
+  code_graph.py               Tree-sitter code parsing + symbol graph
+  routing.py                  /remember classification + routing
+
+hooks/                      Claude Code hook scripts (15 hooks)
+commands/                   Slash command definitions (22 commands)
+dashboard/                  Web dashboard (FastAPI backend + Next.js frontend)
+test_memory.py              809 tests
+test_corpus.py              Hand-crafted 6-week corpus fixture
+test_corpus_scaled.py       Scaled corpus generator (1d/1w/1m/1y)
+test_embeddings_cache.py    ONNX embedding cache for tests
+install.sh                  Installer script
+```
 
 ## Graceful Degradation
 
 | Condition | Behavior |
 |-----------|----------|
-| Ollama down | Embedding-based dedup and per-prompt recall disabled. Session-level recall still works (DB queries, not embeddings). Warn-once message on stderr. |
-| Anthropic API fails | Single retry with 2s delay. If still fails, extraction is skipped — no crash. |
-| No ANTHROPIC_API_KEY | Extraction skipped silently. Recall still works from existing DB. |
-| No database yet | All hooks exit cleanly. DB is created on first successful extraction. |
+| Ollama down | Falls back to ONNX embeddings (if installed). If both unavailable, BM25 keyword search only. |
+| ONNX unavailable | Falls back to Ollama HTTP. If both down, embedding features disabled. |
+| Anthropic API fails | Single retry with 2s delay. Extraction skipped — recall still works. |
+| No ANTHROPIC_API_KEY | Extraction disabled. Recall works from existing DB. |
+| No database yet | All hooks exit cleanly. DB created on first extraction. |
+| DuckDB locked | Retry with exponential backoff (5 attempts, 150ms-2.4s). |
+| Token budget exceeded | Lower-priority items truncated. Stderr reports what was dropped. |

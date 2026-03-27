@@ -120,11 +120,31 @@ def run_extraction(
     if knowledge is None:
         return None
 
+    # ── Validate extracted knowledge ──────────────────────────────────────
+    try:
+        from .validation import validate_knowledge
+        knowledge, review_items = validate_knowledge(knowledge)
+        if review_items:
+            _err(f"[memory/ingest] Flagged {len(review_items)} items for review")
+    except Exception as exc:
+        _err(f"[memory/ingest] Validation failed (proceeding): {exc}")
+        review_items = []
+
     # ── Resolve project scope ────────────────────────────────────────────
     scope = resolve_scope(cwd)
 
     # ── Store to DB ───────────────────────────────────────────────────────
     conn = db.get_connection()
+
+    # Store review items
+    for item in review_items:
+        try:
+            db.insert_review_item(
+                conn, item.get("text", ""), item.get("item_table", "facts"),
+                item, item.get("reason", ""), session_id, scope,
+            )
+        except Exception:
+            pass  # Non-critical
 
     db.upsert_session(
         conn,
@@ -708,8 +728,28 @@ def run_incremental_extraction(
     if knowledge is None:
         return None
 
+    # ── Validate extracted knowledge ──────────────────────────────────────
+    try:
+        from .validation import validate_knowledge
+        knowledge, review_items = validate_knowledge(knowledge)
+        if review_items:
+            _err(f"[memory/ingest] Flagged {len(review_items)} items for review (pass {pass_count+1})")
+    except Exception as exc:
+        _err(f"[memory/ingest] Validation failed (proceeding): {exc}")
+        review_items = []
+
     # ── Open write connection only for the storage phase ──────────────────
     conn = db.get_connection()
+
+    # Store review items
+    for item in review_items:
+        try:
+            db.insert_review_item(
+                conn, item.get("text", ""), item.get("item_table", "facts"),
+                item, item.get("reason", ""), session_id, scope,
+            )
+        except Exception:
+            pass
 
     # ── Upsert session ───────────────────────────────────────────────────
     db.upsert_session(

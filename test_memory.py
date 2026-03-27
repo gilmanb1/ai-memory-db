@@ -5801,7 +5801,8 @@ class TestIngestCoherenceIntegration(unittest.TestCase):
         """Full extraction pipeline should include coherence check without error."""
         mock_extract.return_value = {
             "session_summary": "Test",
-            "facts": [{"text": "Fact A", "category": "technical", "confidence": "high",
+            "facts": [{"text": "DuckDB uses single-writer concurrency for data safety",
+                       "category": "technical", "confidence": "high",
                        "temporal_class": "long", "importance": 5}],
             "ideas": [], "relationships": [], "key_decisions": [],
             "open_questions": [], "entities": [],
@@ -9608,6 +9609,332 @@ class TestCorrectionDetection(unittest.TestCase):
                     Path(str(db_path) + suffix).unlink()
                 except Exception:
                     pass
+
+
+# ── Extraction validation tests ────────────────────────────────────────────
+
+class TestExtractionValidation(unittest.TestCase):
+    """
+    GIVEN extracted knowledge from the LLM
+    WHEN validate_knowledge is called
+    THEN bad items are rejected, borderline items flagged for review,
+         and good items pass through
+    """
+
+    def test_rejects_bare_url(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "https://example.com/api/v1", "confidence": "high",
+                                "importance": 5, "category": "technical", "temporal_class": "short"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("facts", [])), 0)
+
+    def test_rejects_short_text(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "ok", "confidence": "high",
+                                "importance": 5, "category": "technical", "temporal_class": "long"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("facts", [])), 0)
+
+    def test_rejects_meta_commentary(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "I extracted this fact from the conversation about DuckDB",
+                                "confidence": "high", "importance": 5, "category": "technical",
+                                "temporal_class": "long"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("facts", [])), 0)
+
+    def test_rejects_low_confidence_low_importance(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "Some vague claim about the system being slow sometimes",
+                                "confidence": "low", "importance": 2, "category": "technical",
+                                "temporal_class": "short"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("facts", [])), 0)
+
+    def test_flags_low_confidence_high_importance(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "The production database might need to be migrated to a new schema",
+                                "confidence": "low", "importance": 7, "category": "operational",
+                                "temporal_class": "long"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("facts", [])), 0, "Should not pass through")
+        self.assertGreater(len(flagged), 0, "Should be flagged for review")
+        self.assertEqual(flagged[0]["reason"], "low_confidence_high_importance")
+
+    def test_passes_good_fact(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "DuckDB enforces single-writer concurrency for data integrity",
+                                "confidence": "high", "importance": 8, "category": "architecture",
+                                "temporal_class": "long"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned["facts"]), 1)
+        self.assertEqual(len(flagged), 0)
+
+    def test_deduplicates_within_batch(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [
+            {"text": "DuckDB uses WAL for crash safety", "confidence": "high",
+             "importance": 7, "category": "architecture", "temporal_class": "long"},
+            {"text": "DuckDB uses WAL for crash safety", "confidence": "high",
+             "importance": 7, "category": "architecture", "temporal_class": "long"},
+        ]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned["facts"]), 1)
+
+    def test_passes_decisions_unchanged(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"key_decisions": [
+            {"text": "Use DuckDB instead of PostgreSQL", "importance": 8, "temporal_class": "long"}
+        ]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("key_decisions", [])), 1)
+
+    def test_rejects_bare_file_path(self):
+        from memory.validation import validate_knowledge
+        knowledge = {"facts": [{"text": "/Users/gilmanb/projects/ai-memory-db/memory/db.py",
+                                "confidence": "medium", "importance": 3, "category": "technical",
+                                "temporal_class": "short"}]}
+        cleaned, flagged = validate_knowledge(knowledge)
+        self.assertEqual(len(cleaned.get("facts", [])), 0)
+
+
+class TestReviewQueue(unittest.TestCase):
+    """
+    GIVEN a review queue table
+    WHEN items are inserted, approved, or rejected
+    THEN the queue state is consistent
+    """
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_insert_review_item(self):
+        rid = db.insert_review_item(
+            self.conn, "Questionable fact about performance",
+            "facts", {"text": "Questionable fact about performance", "confidence": "low"},
+            "low_confidence_high_importance", "sess-1", "__global__",
+        )
+        self.assertIsNotNone(rid)
+
+    def test_get_pending_reviews(self):
+        db.insert_review_item(
+            self.conn, "Review me", "facts", {}, "test", "sess-1", "__global__",
+        )
+        db.insert_review_item(
+            self.conn, "Review me too", "facts", {}, "test", "sess-1", "__global__",
+        )
+        pending = db.get_pending_reviews(self.conn)
+        self.assertEqual(len(pending), 2)
+
+    def test_approve_review_stores_fact(self):
+        item_data = {
+            "text": "Important validated fact",
+            "category": "architecture",
+            "temporal_class": "long",
+            "confidence": "high",
+            "importance": 8,
+        }
+        rid = db.insert_review_item(
+            self.conn, "Important validated fact", "facts", item_data,
+            "low_confidence", "sess-1", "__global__",
+        )
+        success = db.approve_review(self.conn, rid)
+        self.assertTrue(success)
+
+        # Check it was stored
+        row = self.conn.execute(
+            "SELECT status FROM review_queue WHERE id = ?", [rid]
+        ).fetchone()
+        self.assertEqual(row[0], "approved")
+
+    def test_reject_review(self):
+        rid = db.insert_review_item(
+            self.conn, "Bad fact", "facts", {}, "test", "sess-1", "__global__",
+        )
+        success = db.reject_review(self.conn, rid)
+        self.assertTrue(success)
+
+        row = self.conn.execute(
+            "SELECT status FROM review_queue WHERE id = ?", [rid]
+        ).fetchone()
+        self.assertEqual(row[0], "rejected")
+
+
+# ── Backup/recovery tests ──────────────────────────────────────────────────
+
+class TestBackupRecovery(unittest.TestCase):
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.snapshot_dir = Path(tempfile.mkdtemp())
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_fact(
+            self.conn, "Original fact for backup testing",
+            "technical", "long", "high",
+            _mock_embed("Original fact for backup testing"),
+            "s1", _noop_decay,
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        import shutil
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+        shutil.rmtree(self.snapshot_dir, ignore_errors=True)
+
+    def test_create_snapshot(self):
+        from memory.backup import create_snapshot
+        self.conn.close()
+        snap = create_snapshot(str(self.db_path), str(self.snapshot_dir), "test")
+        self.conn = fresh_conn(self.db_path)
+        self.assertTrue(snap.exists())
+        self.assertGreater(snap.stat().st_size, 0)
+
+    def test_snapshot_rotation(self):
+        from memory.backup import create_snapshot
+        self.conn.close()
+        for i in range(7):
+            create_snapshot(str(self.db_path), str(self.snapshot_dir), f"test_{i}", max_snapshots=5)
+            import time as _t; _t.sleep(0.01)
+        self.conn = fresh_conn(self.db_path)
+        snaps = list(self.snapshot_dir.glob("*.duckdb"))
+        self.assertLessEqual(len(snaps), 5)
+
+    def test_list_snapshots(self):
+        from memory.backup import create_snapshot, list_snapshots
+        self.conn.close()
+        create_snapshot(str(self.db_path), str(self.snapshot_dir), "test1")
+        create_snapshot(str(self.db_path), str(self.snapshot_dir), "test2")
+        self.conn = fresh_conn(self.db_path)
+        snaps = list_snapshots(str(self.snapshot_dir))
+        self.assertEqual(len(snaps), 2)
+        self.assertIn("path", snaps[0])
+        self.assertIn("size_kb", snaps[0])
+
+    def test_restore_snapshot(self):
+        from memory.backup import create_snapshot, restore_snapshot
+        self.conn.close()
+        snap = create_snapshot(str(self.db_path), str(self.snapshot_dir), "before_change")
+
+        # Modify the DB
+        conn2 = fresh_conn(self.db_path)
+        db.upsert_fact(conn2, "New fact after snapshot", "technical", "long", "high",
+                        _mock_embed("New fact after snapshot"), "s2", _noop_decay)
+        count_after = conn2.execute("SELECT COUNT(*) FROM facts WHERE is_active = TRUE").fetchone()[0]
+        conn2.close()
+        self.assertEqual(count_after, 2)
+
+        # Restore
+        restore_snapshot(str(snap), str(self.db_path), str(self.snapshot_dir))
+
+        # Verify restore
+        conn3 = fresh_conn(self.db_path)
+        count_restored = conn3.execute("SELECT COUNT(*) FROM facts WHERE is_active = TRUE").fetchone()[0]
+        conn3.close()
+        self.assertEqual(count_restored, 1, "Should be back to 1 fact after restore")
+        self.conn = fresh_conn(self.db_path)
+
+    def test_export_import_roundtrip(self):
+        from memory.backup import export_memory, import_memory
+        export_path = Path(tempfile.mktemp(suffix=".json"))
+        try:
+            self.conn.close()
+            stats = export_memory(str(self.db_path), str(export_path))
+            self.assertGreater(stats.get("facts", 0), 0)
+            self.assertTrue(export_path.exists())
+
+            # Create a fresh DB and import
+            new_db = Path(tempfile.mktemp(suffix=".duckdb"))
+            new_conn = fresh_conn(new_db)
+            new_conn.close()
+            import_stats = import_memory(str(new_db), str(export_path))
+            self.assertGreater(import_stats.get("facts", 0), 0)
+
+            # Verify
+            verify_conn = db.get_connection(read_only=True, db_path=str(new_db))
+            count = verify_conn.execute("SELECT COUNT(*) FROM facts WHERE is_active = TRUE").fetchone()[0]
+            verify_conn.close()
+            self.assertGreater(count, 0)
+            new_db.unlink(missing_ok=True)
+        finally:
+            export_path.unlink(missing_ok=True)
+            self.conn = fresh_conn(self.db_path)
+
+
+# ── Guardrail enforcement tests ────────────────────────────────────────────
+
+class TestGuardrailEnforcement(unittest.TestCase):
+
+    def setUp(self):
+        self.db_path = Path(tempfile.mktemp(suffix=".duckdb"))
+        self.conn = fresh_conn(self.db_path)
+        db.upsert_guardrail(
+            self.conn, warning="Don't modify retry logic without tests",
+            rationale="Fragile concurrent code",
+            consequence="Connection failures",
+            file_paths=["memory/db.py", "memory/ingest.py"],
+            embedding=_mock_embed("Don't modify retry logic without tests"),
+            session_id="s1",
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        for suffix in ("", ".wal"):
+            try:
+                Path(str(self.db_path) + suffix).unlink()
+            except Exception:
+                pass
+
+    def test_detects_guardrail_violation(self):
+        """Editing a guardrailed file should return a warning."""
+        from memory.guardrail_check import check_guardrail_violation
+        result = check_guardrail_violation(self.conn, "memory/db.py")
+        self.assertIsNotNone(result)
+        self.assertIn("retry logic", result["warning_text"])
+
+    def test_no_guardrail_no_warning(self):
+        """Editing a file with no guardrails returns None."""
+        from memory.guardrail_check import check_guardrail_violation
+        result = check_guardrail_violation(self.conn, "memory/config.py")
+        self.assertIsNone(result)
+
+    def test_partial_path_match(self):
+        """Guardrail on 'memory/db.py' should match '/full/path/memory/db.py'."""
+        from memory.guardrail_check import check_guardrail_violation
+        result = check_guardrail_violation(self.conn, "/home/user/projects/memory/db.py")
+        self.assertIsNotNone(result)
+
+    @patch("subprocess.run")
+    def test_git_stash_called(self, mock_run):
+        """With auto_stash=True, git stash should be called."""
+        from memory.guardrail_check import enforce_guardrail
+        mock_run.return_value = MagicMock(returncode=0)
+        result = enforce_guardrail(self.conn, "memory/db.py", "/tmp/repo", auto_stash=True)
+        self.assertIsNotNone(result)
+        # Verify git stash was called
+        stash_calls = [c for c in mock_run.call_args_list if "stash" in str(c)]
+        self.assertGreater(len(stash_calls), 0)
+
+    @patch("subprocess.run")
+    def test_no_stash_when_disabled(self, mock_run):
+        """With auto_stash=False, no git stash."""
+        from memory.guardrail_check import enforce_guardrail
+        result = enforce_guardrail(self.conn, "memory/db.py", "/tmp/repo", auto_stash=False)
+        self.assertIsNotNone(result)
+        stash_calls = [c for c in mock_run.call_args_list if "stash" in str(c)]
+        self.assertEqual(len(stash_calls), 0)
 
 
 if __name__ == "__main__":

@@ -64,7 +64,7 @@ done
 echo ""
 echo "-> Installing slash commands to ~/.claude/commands/ ..."
 mkdir -p "$HOME/.claude/commands"
-for cmd in remember forget forget-confirm memories facts search-memory decisions entities relationships sessions scopes reflect knowledge recalled session-learned; do
+for cmd in remember forget forget-confirm memories facts search-memory decisions entities relationships sessions scopes reflect knowledge recalled session-learned review; do
   cp "$SCRIPT_DIR/commands/${cmd}.md" "$HOME/.claude/commands/${cmd}.md"
   echo "  ok ${cmd}.md"
 done

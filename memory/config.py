@@ -116,6 +116,10 @@ FACT_CATEGORIES = [
 # ── Outcome scoring (Feature 3) ──────────────────────────────────────
 RECALL_UTILITY_WEIGHT   = True           # use recall_utility in retrieval scoring
 
+# ── Guardrail enforcement ─────────────────────────────────────────────
+GUARDRAIL_ENFORCEMENT_ENABLED = True
+GUARDRAIL_AUTO_STASH = True   # auto-stash changes to guardrailed files
+
 # ── Correction detection ──────────────────────────────────────────────
 CORRECTION_DETECTION_ENABLED = True
 CORRECTION_LLM_FOR_AMBIGUOUS = True   # call LLM for ambiguous corrections (future)

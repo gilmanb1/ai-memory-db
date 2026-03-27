@@ -385,6 +385,31 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         PRIMARY KEY (file_path, scope)
     );
     """),
+
+    (11, "Add review queue and correction log tables", """
+        CREATE TABLE IF NOT EXISTS review_queue (
+            id              VARCHAR PRIMARY KEY,
+            item_text       TEXT NOT NULL,
+            item_table      VARCHAR NOT NULL,
+            item_data       TEXT,
+            reason          VARCHAR,
+            status          VARCHAR DEFAULT 'pending',
+            source_session  VARCHAR,
+            scope           VARCHAR DEFAULT '__global__',
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at     TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS correction_log (
+            id              VARCHAR PRIMARY KEY,
+            old_item_id     VARCHAR NOT NULL,
+            old_table       VARCHAR NOT NULL,
+            new_item_id     VARCHAR,
+            trigger_text    TEXT,
+            detection_type  VARCHAR,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """),
 ]
 
 
@@ -2678,3 +2703,64 @@ def resolve_contradiction(
 ) -> bool:
     """Resolve a contradiction by invalidating the older fact using bi-temporal."""
     return invalidate_fact(conn, invalidate_id)
+
+
+# ── Review Queue ──────────────────────────────────────────────────────────
+
+def insert_review_item(
+    conn: duckdb.DuckDBPyConnection,
+    item_text: str,
+    item_table: str,
+    item_data: dict,
+    reason: str,
+    source_session: str = "",
+    scope: str = GLOBAL_SCOPE,
+) -> str:
+    """Insert an item into the review queue. Returns the review item ID."""
+    import json as _json
+    rid = _uid()
+    conn.execute("""
+        INSERT INTO review_queue (id, item_text, item_table, item_data, reason, source_session, scope)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, [rid, item_text, item_table, _json.dumps(item_data), reason, source_session, scope])
+    return rid
+
+
+def get_pending_reviews(
+    conn: duckdb.DuckDBPyConnection,
+    limit: int = 50,
+) -> list[dict]:
+    """Get pending review items."""
+    rows = conn.execute("""
+        SELECT id, item_text, item_table, item_data, reason, source_session, scope, created_at
+        FROM review_queue WHERE status = 'pending'
+        ORDER BY created_at DESC LIMIT ?
+    """, [limit]).fetchall()
+    cols = ["id", "item_text", "item_table", "item_data", "reason", "source_session", "scope", "created_at"]
+    return [dict(zip(cols, row)) for row in rows]
+
+
+def approve_review(
+    conn: duckdb.DuckDBPyConnection,
+    review_id: str,
+) -> bool:
+    """Approve a review item — marks it approved. Caller stores the fact."""
+    now = _now()
+    result = conn.execute(
+        "UPDATE review_queue SET status = 'approved', reviewed_at = ? WHERE id = ? AND status = 'pending'",
+        [now, review_id],
+    )
+    return True
+
+
+def reject_review(
+    conn: duckdb.DuckDBPyConnection,
+    review_id: str,
+) -> bool:
+    """Reject a review item — marks it rejected, item is not stored."""
+    now = _now()
+    conn.execute(
+        "UPDATE review_queue SET status = 'rejected', reviewed_at = ? WHERE id = ? AND status = 'pending'",
+        [now, review_id],
+    )
+    return True

@@ -488,6 +488,81 @@ def cmd_consolidate(args):
     print("Done.")
 
 
+def cmd_review(args):
+    _require_db()
+    from . import db
+
+    conn = db.get_connection(read_only=args.action in (None, "list", ""))
+
+    if args.action in ("approve", "reject") and args.review_id:
+        if args.action not in ("approve", "reject"):
+            print(f"Unknown action: {args.action}. Use 'approve' or 'reject'.")
+            conn.close()
+            sys.exit(1)
+
+        if not args.action == "approve" and not args.action == "reject":
+            pass
+
+        # Need a write connection for approve/reject
+        conn.close()
+        conn = db.get_connection(read_only=False)
+
+        if args.action == "approve":
+            success = db.approve_review(conn, args.review_id)
+            if success:
+                # Try to store the approved item
+                try:
+                    import json as _json
+                    row = conn.execute(
+                        "SELECT item_text, item_table, item_data, scope FROM review_queue WHERE id = ?",
+                        [args.review_id],
+                    ).fetchone()
+                    if row:
+                        text, table, data_json, scope = row
+                        data = _json.loads(data_json) if data_json else {}
+                        from .embeddings import embed
+                        from .decay import compute_decay_score
+                        emb = embed(text)
+                        if table == "facts":
+                            db.upsert_fact(
+                                conn, text,
+                                data.get("category", "operational"),
+                                data.get("temporal_class", "long"),
+                                "high", emb, "review", compute_decay_score,
+                                scope=scope, importance=data.get("importance", 5),
+                            )
+                except Exception as exc:
+                    print(f"Warning: approved but failed to store: {exc}")
+                print(f"Approved: {args.review_id}")
+            else:
+                print(f"Review item not found or already processed: {args.review_id}")
+        else:
+            success = db.reject_review(conn, args.review_id)
+            print(f"Rejected: {args.review_id}" if success else f"Not found: {args.review_id}")
+        conn.close()
+        return
+
+    # List pending reviews
+    pending = db.get_pending_reviews(conn)
+    conn.close()
+
+    if not pending:
+        print("No pending review items.")
+        return
+
+    print(f"Pending reviews ({len(pending)}):\n")
+    for item in pending:
+        rid = item["id"][:12]
+        text = (item["item_text"] or "")[:100]
+        reason = item["reason"] or ""
+        table = item["item_table"]
+        print(f"  {rid}...  [{table}] ({reason})")
+        print(f"    {text}")
+        print()
+    print(f"To approve: python -m memory review approve <id>")
+    print(f"To reject:  python -m memory review reject <id>")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="memory",
@@ -536,6 +611,10 @@ def main():
     p_session_learned.add_argument("session_id", nargs="?", default="", help="Session ID (prefix ok). Default: most recent")
     p_session_learned.add_argument("--limit", type=int, default=0)
 
+    p_review = sub.add_parser("review", help="Review flagged extraction items")
+    p_review.add_argument("action", nargs="?", default="list", help="list, approve, or reject")
+    p_review.add_argument("review_id", nargs="?", default="", help="Review item ID (for approve/reject)")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -554,6 +633,7 @@ def main():
         "observations": cmd_observations,
         "consolidate": cmd_consolidate,
         "session-learned": cmd_session_learned,
+        "review": cmd_review,
     }
     commands[args.command](args)
 

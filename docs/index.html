@@ -545,15 +545,211 @@ footer a {
 
 footer a:hover { color: var(--accent-cyan); }
 
+/* ── Architecture diagram ───────────────────────────── */
+.arch-diagram {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.5rem;
+  overflow-x: auto;
+  position: relative;
+}
+
+.arch-diagram pre {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  white-space: pre;
+  margin: 0;
+}
+
+.arch-diagram .layer-label {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  margin-bottom: 0.5rem;
+}
+
+.arch-pass {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 0;
+  margin-top: 2rem;
+}
+
+.arch-pass-line {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.arch-pass-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: var(--bg-card);
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.arch-pass-connector {
+  width: 2px;
+  flex: 1;
+  background: var(--border);
+}
+
+.arch-pass-content {
+  padding: 0 0 2rem 1rem;
+  border-left: none;
+}
+
+.arch-pass-trigger {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.arch-pass-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+.arch-pass-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-top: 0.4rem;
+}
+
+/* ── Dashboard showcase ────────────────────────────── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.dashboard-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.75rem;
+  transition: all 0.3s;
+}
+
+.dashboard-card:hover {
+  border-color: var(--border-bright);
+  transform: translateY(-2px);
+}
+
+.dashboard-card.wide {
+  grid-column: 1 / -1;
+}
+
+.dashboard-card-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.dashboard-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.dashboard-card p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+.dashboard-card ul {
+  margin-top: 0.5rem;
+  padding-left: 1rem;
+  list-style: none;
+}
+
+.dashboard-card ul li {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  font-weight: 300;
+  position: relative;
+  padding-left: 0.75rem;
+}
+
+.dashboard-card ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.dashboard-start {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 2rem;
+}
+
+.dashboard-start-step {
+  background: var(--bg-card);
+  padding: 1.25rem 1.5rem;
+}
+
+.dashboard-start-step .step-num {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.dashboard-start-step code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--accent-cyan);
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.dashboard-start-step p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-weight: 300;
+}
+
 /* ── Responsive ─────────────────────────────────────── */
 @media (max-width: 768px) {
   .flow-steps { grid-template-columns: 1fr 1fr; }
   .features-grid { grid-template-columns: 1fr; }
   .pipeline-grid { grid-template-columns: 1fr; }
   .code-section { grid-template-columns: 1fr; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-start { grid-template-columns: 1fr; }
   .stats-bar { flex-wrap: wrap; gap: 1.5rem; }
   nav .nav-links { gap: 1rem; }
   .hero-actions { flex-direction: column; align-items: center; }
+  .arch-diagram { padding: 1.5rem; }
+  .arch-diagram pre { font-size: 0.55rem; }
 }
 
 @media (max-width: 480px) {
@@ -569,8 +765,9 @@ footer a:hover { color: var(--accent-cyan); }
   <div class="logo">ai-memory-db <span>v1.0.0</span></div>
   <div class="nav-links">
     <a href="#how-it-works">How It Works</a>
+    <a href="#architecture">Architecture</a>
     <a href="#features">Features</a>
-    <a href="#retrieval">Retrieval</a>
+    <a href="#dashboard">Dashboard</a>
     <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-primary">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
       GitHub
@@ -769,6 +966,207 @@ footer a:hover { color: var(--accent-cyan); }
   </div>
 </section>
 
+<!-- Architecture -->
+<section id="architecture" style="max-width: 1200px;">
+  <div class="section-label">Architecture</div>
+  <h2 class="section-title">The full pipeline,<br>end to end</h2>
+  <p class="section-desc">
+    Two injection layers (session + per-prompt), three extraction triggers, six retrieval strategies — all converging on a single DuckDB knowledge base.
+  </p>
+
+  <div class="arch-diagram">
+    <pre>
+<span style="color: var(--accent-cyan);">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span style="color: var(--accent-cyan);">│</span>                        <span style="color: var(--text-primary); font-weight: 500;">Claude Code Session</span>                          <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">│</span>                                                                         <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">┌───────────┐</span>  <span style="color: var(--text-muted);">┌──────────────┐</span>  <span style="color: var(--text-muted);">┌──────────────┐</span>  <span style="color: var(--text-muted);">┌───────────┐</span> <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">User</span>      <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">Claude</span>       <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">Status Bar</span>   <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">MCP Tools</span> <span style="color: var(--text-muted);">│</span> <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">│</span> Prompts   <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> Responses    <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> "mem: 45%"   <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> (on-demand<span style="color: var(--text-muted);">│</span> <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">└─────┬─────┘</span>  <span style="color: var(--text-muted);">└──────────────┘</span>  <span style="color: var(--text-muted);">└──────┬───────┘</span>  <span style="color: var(--text-muted);">└─────┬─────┘</span> <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">│</span>        <span style="color: var(--text-muted);">│</span>                                  <span style="color: var(--text-muted);">│</span>                <span style="color: var(--text-muted);">│</span>       <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-cyan);">└────────┼──────────────────────────────────┼────────────────┼───────┘</span>
+         <span style="color: var(--text-muted);">│</span>                                  <span style="color: var(--text-muted);">│</span>                <span style="color: var(--text-muted);">│</span>
+    <span style="color: var(--accent-amber);">HOOKS</span><span style="color: var(--text-muted);">│</span>(automatic)                       <span style="color: var(--text-muted);">│</span>           <span style="color: var(--accent-cyan);">MCP SERVER</span>
+         <span style="color: var(--text-muted);">│</span>                                  <span style="color: var(--text-muted);">│</span>           (stdio/JSON-RPC)
+         <span style="color: var(--text-muted);">▼</span>                                  <span style="color: var(--text-muted);">▼</span>                <span style="color: var(--text-muted);">▼</span>
+<span style="color: var(--accent-emerald);">┌─────────────────┐</span>  <span style="color: var(--accent-amber);">┌──────────────────┐</span>  <span style="color: var(--accent-cyan);">┌─────────────────────────┐</span>
+<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-primary); font-weight: 500;">SESSION START</span>   <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-primary); font-weight: 500;">STATUS LINE</span>      <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-primary); font-weight: 500;">memory_mcp_server.py</span>    <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">│</span>                 <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> (every ~10-30s)  <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span>                         <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">• session_recall</span><span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Show ctx %</span>     <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">Tools:</span>                  <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">• Inject long/</span>  <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Trigger extract</span><span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_search</span>         <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">  medium facts</span>  <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">  at 40/70/90%</span>   <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_store</span>          <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">• systemMessage</span><span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Prefetch next</span>  <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_guardrail</span>      <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">  output</span>        <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">  prompt context</span> <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_check_file</span>     <span style="color: var(--accent-cyan);">│</span>
+<span style="color: var(--accent-emerald);">└─────────────────┘</span>  <span style="color: var(--accent-amber);">└────────┬─────────┘</span>  <span style="color: var(--accent-cyan);">└────────────┬────────────┘</span>
+                              <span style="color: var(--text-muted);">│</span>                         <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">┌────────▼─────────┐</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-primary); font-weight: 500;">_extract_worker</span>  <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">(background)</span>     <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Claude extract</span> <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Embed &amp; upsert</span> <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Consolidate</span>    <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Decay pass</span>     <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
+                     <span style="color: var(--accent-amber);">└────────┬─────────┘</span>              <span style="color: var(--text-muted);">│</span>
+                              <span style="color: var(--text-muted);">│</span>                         <span style="color: var(--text-muted);">│</span>
+                              <span style="color: var(--text-muted);">▼</span>                         <span style="color: var(--text-muted);">▼</span>
+            <span style="color: var(--accent-violet);">┌────────────────────────────────────────────┐</span>
+            <span style="color: var(--accent-violet);">│</span>     <span style="color: var(--text-primary); font-weight: 500;">~/.claude/memory/knowledge.duckdb</span>        <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>                                            <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">facts · decisions · guardrails · entities</span>  <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">relationships · procedures · error_solutions</span><span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">observations · code_symbols · communities</span>  <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>                                            <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">HNSW vector indexes (768-dim)</span>              <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">Scope: per-repo + __global__</span>               <span style="color: var(--accent-violet);">│</span>
+            <span style="color: var(--accent-violet);">└────────────────────────────────────────────┘</span>
+    </pre>
+  </div>
+
+  <!-- 6-pass extraction timeline -->
+  <h3 style="font-family: var(--font-display); font-size: 1.5rem; margin-top: 4rem; margin-bottom: 0.5rem;">Extraction &amp; Recall Passes</h3>
+  <p class="section-desc" style="margin-bottom: 2rem;">Six distinct passes run during a session lifecycle — three for extraction, two for recall, one for maintenance.</p>
+
+  <div class="arch-pass">
+    <div class="arch-pass-line">
+      <div class="arch-pass-dot" style="border-color: var(--accent-emerald);"></div>
+      <div class="arch-pass-connector"></div>
+    </div>
+    <div class="arch-pass-content">
+      <div class="arch-pass-trigger" style="color: var(--accent-emerald);">Pass 1 &mdash; Session Start Recall</div>
+      <div class="arch-pass-desc">Fires once when Claude Code opens. Queries long-term and medium-term facts, decisions, guardrails, entities, procedures, and community summaries. Injects as <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">systemMessage</code> (~3000 tokens). Also triggers incremental code graph parse.</div>
+      <div class="arch-pass-badge" style="background: rgba(52, 211, 153, 0.1); color: var(--accent-emerald);">SessionStart hook</div>
+    </div>
+
+    <div class="arch-pass-line">
+      <div class="arch-pass-dot" style="border-color: var(--accent-cyan);"></div>
+      <div class="arch-pass-connector"></div>
+    </div>
+    <div class="arch-pass-content">
+      <div class="arch-pass-trigger" style="color: var(--accent-cyan);">Pass 2 &mdash; Per-Prompt Recall</div>
+      <div class="arch-pass-desc">Fires on every user prompt. Runs 6-way parallel retrieval (semantic, BM25, graph, temporal, path, code) fused via RRF. Injects as <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">additionalContext</code> (~4000 tokens). Includes defensive guardrail/procedure/error_solution lookup.</div>
+      <div class="arch-pass-badge" style="background: rgba(34, 211, 238, 0.1); color: var(--accent-cyan);">UserPromptSubmit hook &middot; &lt;30ms</div>
+    </div>
+
+    <div class="arch-pass-line">
+      <div class="arch-pass-dot" style="border-color: var(--accent-amber);"></div>
+      <div class="arch-pass-connector"></div>
+    </div>
+    <div class="arch-pass-content">
+      <div class="arch-pass-trigger" style="color: var(--accent-amber);">Pass 3 &mdash; Incremental Extraction (40%)</div>
+      <div class="arch-pass-desc">When context window hits 40%, the status line spawns a background worker. Parses the conversation delta (new messages since last pass), calls Claude Sonnet with <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">tool_use</code> for structured extraction, deduplicates against prior passes and recalled items.</div>
+      <div class="arch-pass-badge" style="background: rgba(245, 158, 11, 0.1); color: var(--accent-amber);">StatusLine trigger &middot; background</div>
+    </div>
+
+    <div class="arch-pass-line">
+      <div class="arch-pass-dot" style="border-color: var(--accent-amber);"></div>
+      <div class="arch-pass-connector"></div>
+    </div>
+    <div class="arch-pass-content">
+      <div class="arch-pass-trigger" style="color: var(--accent-amber);">Pass 4 &amp; 5 &mdash; Deeper Extraction (70%, 90%)</div>
+      <div class="arch-pass-desc">Same pipeline, triggered at higher context usage. Each pass receives the prior narrative summary as context, enabling chained extraction without re-processing old content. Cross-pass dedup threshold is tighter (0.85 vs 0.92).</div>
+      <div class="arch-pass-badge" style="background: rgba(245, 158, 11, 0.1); color: var(--accent-amber);">StatusLine trigger &middot; incremental delta</div>
+    </div>
+
+    <div class="arch-pass-line">
+      <div class="arch-pass-dot" style="border-color: var(--accent-violet);"></div>
+      <div class="arch-pass-connector"></div>
+    </div>
+    <div class="arch-pass-content">
+      <div class="arch-pass-trigger" style="color: var(--accent-violet);">Pass 6 &mdash; Session End Maintenance</div>
+      <div class="arch-pass-desc">Final extraction with <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">is_final=True</code>. Finalizes narratives, runs consolidation (synthesizes observations from facts), applies temporal decay pass, purges hard-deleted items (soft-deleted &gt;30 days), rebuilds FTS indexes, auto-snapshots the database.</div>
+      <div class="arch-pass-badge" style="background: rgba(167, 139, 250, 0.1); color: var(--accent-violet);">SessionEnd hook &middot; PreCompact hook</div>
+    </div>
+
+    <div class="arch-pass-line">
+      <div class="arch-pass-dot" style="border-color: var(--accent-rose);"></div>
+      <div class="arch-pass-connector" style="background: transparent;"></div>
+    </div>
+    <div class="arch-pass-content">
+      <div class="arch-pass-trigger" style="color: var(--accent-rose);">Continuous &mdash; PostToolUse Guard</div>
+      <div class="arch-pass-desc">Fires after every Write/Edit tool call. Re-parses modified files in the code graph. Checks guardrails linked to edited files — auto-stashes via git if a guardrail is violated.</div>
+      <div class="arch-pass-badge" style="background: rgba(251, 113, 133, 0.1); color: var(--accent-rose);">PostToolUse hook &middot; per-file</div>
+    </div>
+  </div>
+</section>
+
+<!-- Dashboard -->
+<section id="dashboard">
+  <div class="section-label">Web Dashboard</div>
+  <h2 class="section-title">See what your AI<br>actually remembers</h2>
+  <p class="section-desc">
+    A full-featured Next.js dashboard for exploring, managing, and visualizing the knowledge base. CRUD on all item types, graph visualization, live polling, and per-scope filtering.
+  </p>
+
+  <div class="dashboard-grid">
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">&#128202;</div>
+      <h3>Stats Overview</h3>
+      <p>At-a-glance counts for all 11 knowledge types. Click any card to dive into that section. Live-polls every 5 seconds.</p>
+    </div>
+
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">&#128209;</div>
+      <h3>Facts &amp; Decisions</h3>
+      <p>Full table with decay bars, temporal badges, trend arrows, category badges. Filter by class, search by text. Create, edit, and soft-delete.</p>
+    </div>
+
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">&#128296;</div>
+      <h3>Entity &amp; Relationship Graph</h3>
+      <p>Cytoscape.js visualization with full controls:</p>
+      <ul>
+        <li>6 layout algorithms (force-directed, circle, concentric, hierarchy, grid, CoSE)</li>
+        <li>Double-click focus mode with neighborhood highlight</li>
+        <li>Node count slider, label toggle, search with auto-zoom</li>
+        <li>Edge-type legend with click-to-filter</li>
+        <li>Export as high-res PNG</li>
+      </ul>
+    </div>
+
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">&#128187;</div>
+      <h3>Code Graph</h3>
+      <p>File dependency visualization. Nodes colored by language (Python, TypeScript, Go, Rust), sized by symbol count. Click a file to see:</p>
+      <ul>
+        <li>Symbol table (functions, classes, methods with line numbers)</li>
+        <li>Import dependencies (clickable navigation)</li>
+        <li>Dependents (what imports this file)</li>
+      </ul>
+    </div>
+
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">&#128737;</div>
+      <h3>Guardrails, Procedures &amp; Error Solutions</h3>
+      <p>Manage protective rules, how-to procedures, and error&rarr;fix pairs. File path badges show which files each item is linked to. Full CRUD.</p>
+    </div>
+
+    <div class="dashboard-card">
+      <div class="dashboard-card-icon">&#128270;</div>
+      <h3>Semantic Search</h3>
+      <p>Search across all knowledge types with type filter toggles. Results show similarity score, type badge, scope, and matched text.</p>
+    </div>
+  </div>
+
+  <div class="dashboard-start">
+    <div class="dashboard-start-step">
+      <div class="step-num">01 &mdash; Start the backend</div>
+      <code>python3 -m uvicorn dashboard.backend.server:app --port 9111</code>
+    </div>
+    <div class="dashboard-start-step">
+      <div class="step-num">02 &mdash; Start the frontend</div>
+      <code>cd dashboard/frontend &amp;&amp; npm install &amp;&amp; npm run dev</code>
+    </div>
+    <div class="dashboard-start-step">
+      <div class="step-num">03 &mdash; Open in browser</div>
+      <p>Visit <code>http://localhost:3000</code></p>
+    </div>
+    <div class="dashboard-start-step">
+      <div class="step-num">04 &mdash; That's it</div>
+      <p>Dashboard reads from your live DuckDB. Updates in real-time.</p>
+    </div>
+  </div>
+</section>
+
 <!-- Install -->
 <section id="install">
   <div class="section-label">Get Started</div>
@@ -846,7 +1244,7 @@ const observer = new IntersectionObserver((entries) => {
   });
 }, { threshold: 0.1 });
 
-document.querySelectorAll('.flow-step, .feature-card, .pipeline-item').forEach(el => {
+document.querySelectorAll('.flow-step, .feature-card, .pipeline-item, .dashboard-card, .arch-pass-content, .dashboard-start-step').forEach(el => {
   el.style.opacity = '0';
   el.style.transform = 'translateY(16px)';
   el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';

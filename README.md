@@ -165,6 +165,22 @@ memory_check_file(file_path="src/auth.py")
 | **Truncation visibility** | Stderr reports when items are truncated; footer in injected context |
 | **DuckDB concurrency** | Retry with exponential backoff, per-process init caching, read-only optimization |
 
+## Live Demo
+
+Deploy a read-only demo dashboard with sample data:
+
+```bash
+# Docker (local)
+python3 demo/seed_demo_db.py   # Generate sample knowledge base
+docker build -t ai-memory-db-demo .
+docker run -p 8080:8080 ai-memory-db-demo
+
+# Render (one-click)
+# Push to GitHub, connect repo in Render dashboard — uses render.yaml
+```
+
+The demo uses the test corpus (57 facts, 31 entities, 15 decisions, 8 guardrails across 3 projects) with mock embeddings. No Ollama or API key needed.
+
 ## Web Dashboard
 
 A full-featured Next.js dashboard for exploring and managing the knowledge base:

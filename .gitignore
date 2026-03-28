@@ -12,3 +12,4 @@ bench/LMEB
 node_modules/
 .next/
 out/
+demo/knowledge.duckdb

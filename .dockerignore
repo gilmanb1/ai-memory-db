@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+__pycache__
+*.pyc
+.pytest_cache
+.git
+bench/
+.test_embedding_cache.json
+*.duckdb
+*.duckdb.wal
+dashboard/frontend/node_modules
+dashboard/frontend/.next
+dashboard/frontend/out

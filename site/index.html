@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-memory-db — Persistent Memory for Claude Code</title>
+<meta name="description" content="Give Claude Code a brain that remembers. Extract facts, decisions, and relationships from conversations. Inject relevant context into every future session.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #080b11;
+  --bg-surface: #0d1117;
+  --bg-card: #111820;
+  --bg-card-hover: #161e28;
+  --border: #1e2a3a;
+  --border-bright: #2a3a4e;
+  --text-primary: #e2e8f0;
+  --text-secondary: #8494a7;
+  --text-muted: #4a5568;
+  --accent-cyan: #22d3ee;
+  --accent-amber: #f59e0b;
+  --accent-emerald: #34d399;
+  --accent-rose: #fb7185;
+  --accent-violet: #a78bfa;
+  --glow-cyan: rgba(34, 211, 238, 0.15);
+  --glow-amber: rgba(245, 158, 11, 0.12);
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body: 'Outfit', -apple-system, sans-serif;
+  --font-mono: 'DM Mono', 'SF Mono', monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Grain overlay ──────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Navigation ─────────────────────────────────────── */
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(8, 11, 17, 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+nav .logo {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--accent-cyan);
+  letter-spacing: 0.02em;
+}
+
+nav .logo span { color: var(--text-muted); }
+
+nav .nav-links {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+
+nav .nav-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 400;
+  transition: color 0.2s;
+}
+
+nav .nav-links a:hover { color: var(--text-primary); }
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--accent-cyan);
+  color: var(--bg-deep);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: #06b6d4;
+  box-shadow: 0 0 20px var(--glow-cyan);
+}
+
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-decoration: none;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-outline:hover {
+  border-color: var(--border-bright);
+  color: var(--text-primary);
+}
+
+/* ── Hero ───────────────────────────────────────────── */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8rem 2rem 6rem;
+  text-align: center;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 20%, rgba(34, 211, 238, 0.06), transparent),
+    radial-gradient(ellipse 60% 40% at 70% 80%, rgba(245, 158, 11, 0.04), transparent),
+    radial-gradient(ellipse 50% 50% at 20% 60%, rgba(167, 139, 250, 0.03), transparent);
+}
+
+/* Animated grid */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.3;
+  mask-image: radial-gradient(ellipse 70% 50% at 50% 50%, black 20%, transparent 70%);
+  animation: gridPulse 8s ease-in-out infinite;
+}
+
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.35; }
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.9rem;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 100px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--accent-cyan);
+  margin-bottom: 2rem;
+  animation: fadeUp 0.6s ease-out both;
+}
+
+.hero-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  max-width: 800px;
+  position: relative;
+  animation: fadeUp 0.6s ease-out 0.1s both;
+}
+
+.hero h1 em {
+  font-style: italic;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-violet));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  max-width: 560px;
+  margin-top: 1.5rem;
+  font-weight: 300;
+  line-height: 1.7;
+  animation: fadeUp 0.6s ease-out 0.2s both;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2.5rem;
+  animation: fadeUp 0.6s ease-out 0.3s both;
+}
+
+.hero-install {
+  margin-top: 3rem;
+  animation: fadeUp 0.6s ease-out 0.4s both;
+}
+
+.install-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.install-block:hover {
+  border-color: var(--border-bright);
+  background: var(--bg-card-hover);
+}
+
+.install-block .prompt { color: var(--accent-amber); }
+.install-block code { color: var(--text-primary); user-select: all; }
+.install-block .copy-hint {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border);
+  padding-left: 0.75rem;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Stats bar ──────────────────────────────────────── */
+.stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  padding: 2rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Section layout ─────────────────────────────────── */
+section {
+  padding: 6rem 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent-cyan);
+  margin-bottom: 1rem;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 400;
+  line-height: 1.15;
+  margin-bottom: 1rem;
+}
+
+.section-desc {
+  color: var(--text-secondary);
+  max-width: 600px;
+  font-weight: 300;
+  line-height: 1.7;
+  margin-bottom: 3rem;
+}
+
+/* ── How It Works ───────────────────────────────────── */
+.flow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.flow-step {
+  background: var(--bg-card);
+  padding: 2rem 1.5rem;
+  position: relative;
+  transition: background 0.3s;
+}
+
+.flow-step:hover { background: var(--bg-card-hover); }
+
+.flow-step-num {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.flow-step-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.flow-step h3 {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.flow-step p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+/* ── Feature cards ──────────────────────────────────── */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.feature-card {
+  background: var(--bg-card);
+  padding: 2rem;
+  transition: background 0.3s;
+}
+
+.feature-card:hover { background: var(--bg-card-hover); }
+
+.feature-icon {
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+/* ── Retrieval pipeline ─────────────────────────────── */
+.pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.pipeline-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  transition: all 0.3s;
+}
+
+.pipeline-item:hover {
+  border-color: var(--border-bright);
+  transform: translateY(-2px);
+}
+
+.pipeline-name {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.pipeline-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-weight: 300;
+}
+
+.pipeline-speed {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-top: 0.75rem;
+}
+
+/* ── Code block ─────────────────────────────────────── */
+.code-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+.code-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.code-header .dots {
+  display: flex;
+  gap: 5px;
+}
+
+.code-header .dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-bright);
+}
+
+.code-content {
+  padding: 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.8;
+  overflow-x: auto;
+}
+
+.code-content .comment { color: var(--text-muted); }
+.code-content .command { color: var(--accent-cyan); }
+.code-content .string { color: var(--accent-emerald); }
+.code-content .keyword { color: var(--accent-violet); }
+.code-content .flag { color: var(--accent-amber); }
+
+/* ── Footer ─────────────────────────────────────────── */
+footer {
+  padding: 3rem 2rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+footer p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+footer a:hover { color: var(--accent-cyan); }
+
+/* ── Responsive ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .flow-steps { grid-template-columns: 1fr 1fr; }
+  .features-grid { grid-template-columns: 1fr; }
+  .pipeline-grid { grid-template-columns: 1fr; }
+  .code-section { grid-template-columns: 1fr; }
+  .stats-bar { flex-wrap: wrap; gap: 1.5rem; }
+  nav .nav-links { gap: 1rem; }
+  .hero-actions { flex-direction: column; align-items: center; }
+}
+
+@media (max-width: 480px) {
+  .flow-steps { grid-template-columns: 1fr; }
+  nav .nav-links a:not(.btn-primary) { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <div class="logo">ai-memory-db <span>v1.0.0</span></div>
+  <div class="nav-links">
+    <a href="#how-it-works">How It Works</a>
+    <a href="#features">Features</a>
+    <a href="#retrieval">Retrieval</a>
+    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-primary">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+
+  <div class="hero-badge">
+    <span class="dot"></span>
+    Open Source &middot; Local-First &middot; 819 Tests
+  </div>
+
+  <h1>Give Claude Code<br>a <em>memory</em></h1>
+
+  <p class="hero-sub">
+    Automatically extract knowledge from every conversation.
+    Inject relevant context into every future session.
+    Your facts, decisions, and guardrails persist — across projects, across time.
+  </p>
+
+  <div class="hero-actions">
+    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-primary">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+    <a href="#install" class="btn-outline">Install Guide</a>
+  </div>
+
+  <div class="hero-install">
+    <div class="install-block" onclick="navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash')">
+      <span class="prompt">$</span>
+      <code>curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash</code>
+      <span class="copy-hint">click to copy</span>
+    </div>
+  </div>
+</div>
+
+<!-- Stats bar -->
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-value">6</div>
+    <div class="stat-label">Retrieval Strategies</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">22</div>
+    <div class="stat-label">Slash Commands</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">819</div>
+    <div class="stat-label">Tests</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">8</div>
+    <div class="stat-label">Knowledge Types</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">5</div>
+    <div class="stat-label">Languages Parsed</div>
+  </div>
+</div>
+
+<!-- How It Works -->
+<section id="how-it-works">
+  <div class="section-label">How It Works</div>
+  <h2 class="section-title">Fully automatic. Zero config.</h2>
+  <p class="section-desc">
+    Hooks fire at every stage of your Claude Code session. Knowledge is extracted in the background, stored locally, and recalled when relevant.
+  </p>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-step-num">01</div>
+      <div class="flow-step-icon" style="background: rgba(34, 211, 238, 0.1); color: var(--accent-cyan);">&#9889;</div>
+      <h3>Session Start</h3>
+      <p>Long-term facts, guardrails, and decisions are injected as system context. Claude starts every session knowing what it learned before.</p>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">02</div>
+      <div class="flow-step-icon" style="background: rgba(52, 211, 153, 0.1); color: var(--accent-emerald);">&#128270;</div>
+      <h3>Every Prompt</h3>
+      <p>6-way parallel retrieval finds relevant facts, error solutions, guardrails, and code structure — injected as additional context in &lt;30ms.</p>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">03</div>
+      <div class="flow-step-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--accent-amber);">&#129504;</div>
+      <h3>Background Extraction</h3>
+      <p>At 40%, 70%, and 90% context usage, knowledge is extracted via Claude Sonnet — facts, entities, relationships, decisions.</p>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">04</div>
+      <div class="flow-step-icon" style="background: rgba(167, 139, 250, 0.1); color: var(--accent-violet);">&#128338;</div>
+      <h3>Decay &amp; Promote</h3>
+      <p>Short-term memories fade. Items reinforced across 3+ sessions promote to long-term. Items seen in 3+ projects go global.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="section-label">Features</div>
+  <h2 class="section-title">Everything you need.<br>Nothing you don't.</h2>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">&#128218;</div>
+      <h3>8 Knowledge Types</h3>
+      <p>Facts, decisions, guardrails, procedures, error solutions, observations, entities, and relationships — each with distinct recall priority.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#127760;</div>
+      <h3>Project Scoping</h3>
+      <p>Knowledge is isolated per git repo. Facts from project A never leak into project B. Cross-project items auto-promote to global.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128736;</div>
+      <h3>22 Slash Commands</h3>
+      <p>/remember, /forget, /reflect, /search-memory, /knowledge, /audit-memory, /export-memory, and 15 more for full control.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#129302;</div>
+      <h3>Code Graph</h3>
+      <p>Multi-language AST parsing (Python, TypeScript, Go, Rust) via tree-sitter. Symbols, imports, and dependencies tracked per file.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128737;</div>
+      <h3>Guardrail Enforcement</h3>
+      <p>PostToolUse hook detects edits to guardrailed files and auto-stashes via git. Correction detection auto-supersedes bad facts.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128202;</div>
+      <h3>Web Dashboard</h3>
+      <p>Next.js + Cytoscape.js dashboard with full CRUD, graph visualization, live polling, code graph, and per-scope filtering.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128190;</div>
+      <h3>Auto-Snapshots</h3>
+      <p>DB snapshot on every session end (rotating last 5). Export to JSON, import from JSON, restore from any snapshot.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128274;</div>
+      <h3>Local-First</h3>
+      <p>Everything runs locally. DuckDB for storage, Ollama/ONNX for embeddings. Your knowledge never leaves your machine.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#9889;</div>
+      <h3>Graceful Degradation</h3>
+      <p>Ollama down? Falls back to ONNX. API fails? Recall still works. DB locked? Retries with backoff. No crash, ever.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Retrieval Pipeline -->
+<section id="retrieval">
+  <div class="section-label">Retrieval Pipeline</div>
+  <h2 class="section-title">Six strategies. One fused result.</h2>
+  <p class="section-desc">
+    Every prompt triggers parallel retrieval across six strategies, fused via Reciprocal Rank Fusion. The best results surface regardless of how the knowledge was stored.
+  </p>
+
+  <div class="pipeline-grid">
+    <div class="pipeline-item">
+      <div class="pipeline-name" style="color: var(--accent-cyan);">Semantic</div>
+      <div class="pipeline-desc">Embedding cosine similarity across 9 tables. Finds conceptually related facts even with different wording.</div>
+      <div class="pipeline-speed">~50ms &middot; 768-dim vectors</div>
+    </div>
+    <div class="pipeline-item">
+      <div class="pipeline-name" style="color: var(--accent-emerald);">BM25</div>
+      <div class="pipeline-desc">Full-text keyword search via DuckDB FTS extension. Catches exact terms that embedding search misses.</div>
+      <div class="pipeline-speed">~10ms &middot; keyword matching</div>
+    </div>
+    <div class="pipeline-item">
+      <div class="pipeline-name" style="color: var(--accent-violet);">Graph</div>
+      <div class="pipeline-desc">2-hop BFS through entity relationships. Finds facts connected to mentioned entities even when not directly similar.</div>
+      <div class="pipeline-speed">~20ms &middot; entity traversal</div>
+    </div>
+    <div class="pipeline-item">
+      <div class="pipeline-name" style="color: var(--accent-amber);">Temporal</div>
+      <div class="pipeline-desc">Date-range filtering for queries like "last week" or "yesterday." Surfaces recent context when time matters.</div>
+      <div class="pipeline-speed">~5ms &middot; date parsing</div>
+    </div>
+    <div class="pipeline-item">
+      <div class="pipeline-name" style="color: var(--accent-rose);">Path</div>
+      <div class="pipeline-desc">File-path matching via fact_file_links. When you mention a file, its guardrails and linked facts surface.</div>
+      <div class="pipeline-speed">~10ms &middot; path matching</div>
+    </div>
+    <div class="pipeline-item">
+      <div class="pipeline-name" style="color: var(--text-primary);">Code</div>
+      <div class="pipeline-desc">Symbol and dependency graph search. Finds functions, classes, and import chains from the code graph.</div>
+      <div class="pipeline-speed">~15ms &middot; AST-powered</div>
+    </div>
+  </div>
+</section>
+
+<!-- Install -->
+<section id="install">
+  <div class="section-label">Get Started</div>
+  <h2 class="section-title">Install in 60 seconds</h2>
+
+  <div class="code-section">
+    <div>
+      <p class="section-desc" style="margin-bottom: 1.5rem;">
+        One command. Restart Claude Code. That's it.
+        The system runs automatically from that point forward — no configuration, no manual steps.
+      </p>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.7; font-weight: 300;">
+        The installer copies the memory package, hook scripts, and slash commands to <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.8rem;">~/.claude/</code>.
+        It configures hooks in your settings.json and runs the test suite to verify everything works.
+      </p>
+      <div style="margin-top: 2rem;">
+        <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-primary">Read the docs</a>
+      </div>
+    </div>
+
+    <div>
+      <div class="code-block">
+        <div class="code-header">
+          <div class="dots"><span></span><span></span><span></span></div>
+          terminal
+        </div>
+        <div class="code-content">
+<span class="comment"># Prerequisites</span>
+<span class="command">curl</span> <span class="flag">-LsSf</span> https://astral.sh/uv/install.sh <span class="command">|</span> <span class="command">sh</span>
+<span class="command">ollama</span> pull nomic-embed-text
+<span class="command">export</span> ANTHROPIC_API_KEY=<span class="string">"sk-ant-..."</span>
+
+<span class="comment"># Install</span>
+<span class="command">curl</span> <span class="flag">-fsSL</span> https://raw.githubusercontent.com/
+  gilmanb1/ai-memory-db/master/
+  install-remote.sh <span class="command">|</span> <span class="command">bash</span>
+
+<span class="comment"># Restart Claude Code — done</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>
+    <a href="https://github.com/gilmanb1/ai-memory-db">ai-memory-db</a> &middot;
+    MIT License &middot;
+    Built for <a href="https://claude.ai/code">Claude Code</a>
+  </p>
+</footer>
+
+<script>
+// Copy install command on click
+document.querySelector('.install-block')?.addEventListener('click', function() {
+  const cmd = 'curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash';
+  navigator.clipboard.writeText(cmd).then(() => {
+    const hint = this.querySelector('.copy-hint');
+    const orig = hint.textContent;
+    hint.textContent = 'copied!';
+    hint.style.color = 'var(--accent-emerald)';
+    setTimeout(() => { hint.textContent = orig; hint.style.color = ''; }, 2000);
+  });
+});
+
+// Staggered reveal on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry, i) => {
+    if (entry.isIntersecting) {
+      entry.target.style.animationDelay = `${i * 0.05}s`;
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.flow-step, .feature-card, .pipeline-item').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(16px)';
+  el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+  observer.observe(el);
+});
+
+// Add visible class styles
+const style = document.createElement('style');
+style.textContent = '.visible { opacity: 1 !important; transform: translateY(0) !important; }';
+document.head.appendChild(style);
+</script>
+
+</body>
+</html>

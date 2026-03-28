@@ -1,22 +1,34 @@
 # Claude Code Memory System
 
+[![Tests](https://github.com/gilmanb1/ai-memory-db/actions/workflows/test.yml/badge.svg)](https://github.com/gilmanb1/ai-memory-db/actions/workflows/test.yml)
+
 Persistent knowledge base for Claude Code. Hooks extract facts, decisions, relationships, and more from conversations, store them in DuckDB with local embeddings, and inject relevant context into future sessions. Knowledge is scoped per git repo with automatic cross-project promotion.
 
 ## Quick Start
 
+**One-command install:**
+
 ```bash
-# 1. Prerequisites
-curl -LsSf https://astral.sh/uv/install.sh | sh   # Python script runner
-ollama pull nomic-embed-text                        # Local embedding model
-export ANTHROPIC_API_KEY="sk-ant-..."               # For knowledge extraction
-
-# 2. Install (all Claude Code sessions)
-bash install.sh
-
-# 3. Restart Claude Code — memory is now active
+curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash
 ```
 
-That's it. The system runs automatically via hooks. No manual steps during normal use.
+**Or clone and install:**
+
+```bash
+git clone https://github.com/gilmanb1/ai-memory-db.git
+cd ai-memory-db
+bash install.sh
+```
+
+**Prerequisites** (install these first):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # Python script runner
+ollama pull nomic-embed-text                        # Local embedding model (768-dim)
+export ANTHROPIC_API_KEY="sk-ant-..."               # For knowledge extraction
+```
+
+Restart Claude Code after installing — memory is now active. No manual steps during normal use.
 
 **Platform support:** Linux, macOS, Windows (WSL2). Requires `bash`, `python3 >= 3.11`, `uv`, and `ollama`.
 
@@ -150,30 +162,59 @@ Features:
 
 ## Install
 
+### Option A: One-command install (recommended)
+
 ```bash
-# Prerequisites
-curl -LsSf https://astral.sh/uv/install.sh | sh
-ollama pull nomic-embed-text
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Install globally (all sessions)
-bash install.sh
-
-# Install for current project only
-bash install.sh --project
+curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash
 ```
 
-**What the installer does:**
-1. Copies `memory/` package to `~/.claude/memory/`
-2. Copies hook scripts to `~/.claude/hooks/`
-3. Copies 22 slash commands to `~/.claude/commands/`
-4. Configures hooks and status line in `settings.json`
-5. Runs the test suite
+This clones the repo to a temp directory, runs the installer, and cleans up. To install a specific version:
 
-**Platform notes:**
-- **macOS/Linux:** Works out of the box with bash
-- **WSL2:** Works as-is (uses `$HOME/.claude/` which maps correctly)
-- **Optional ONNX:** If `onnxruntime` + `transformers` are installed, embeddings run in-process (~3ms) without needing Ollama
+```bash
+AI_MEMORY_DB_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash
+```
+
+### Option B: Clone and install
+
+```bash
+git clone https://github.com/gilmanb1/ai-memory-db.git
+cd ai-memory-db
+bash install.sh              # Install globally (all Claude Code sessions)
+bash install.sh --project    # Or install for current project only
+```
+
+### Prerequisites
+
+| Dependency | Install | Purpose |
+|-----------|---------|---------|
+| Python 3.11+ | System package manager | Runtime |
+| [uv](https://docs.astral.sh/uv/) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | Inline script deps |
+| [Ollama](https://ollama.com) | `ollama pull nomic-embed-text` | Local embeddings (768-dim) |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) | Knowledge extraction |
+
+**Optional:** Install `onnxruntime` + `transformers` for in-process embeddings (~3ms, no Ollama needed).
+
+### What the installer does
+
+1. Copies `memory/` package to `~/.claude/memory/`
+2. Copies 15 hook scripts to `~/.claude/hooks/`
+3. Copies 22 slash commands to `~/.claude/commands/`
+4. Configures hooks, PostToolUse, and status line in `settings.json`
+5. Runs the test suite to verify installation
+
+### Updating
+
+```bash
+cd ai-memory-db && git pull && bash install.sh
+```
+
+Or re-run the one-liner — it always fetches the latest.
+
+### Platform notes
+
+- **macOS/Linux:** Works out of the box
+- **WSL2:** Works as-is (`$HOME/.claude/` maps correctly)
+- **Windows (native):** Not supported — use WSL2
 
 ## Configuration
 

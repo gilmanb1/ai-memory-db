@@ -633,6 +633,127 @@ footer a:hover { color: var(--accent-cyan); }
   margin-top: 0.4rem;
 }
 
+/* ── Comparison table ──────────────────────────────── */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.compare-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.compare-table th:first-child { width: 180px; }
+
+.compare-table td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.compare-table tr:last-child td { border-bottom: none; }
+.compare-table tr:hover td { background: var(--bg-card-hover); }
+.compare-table td:first-child { color: var(--text-primary); font-weight: 500; }
+
+.compare-table .yes { color: var(--accent-emerald); }
+.compare-table .no { color: var(--text-muted); }
+.compare-table .partial { color: var(--accent-amber); }
+.compare-table .highlight { color: var(--accent-cyan); font-weight: 500; }
+
+/* ── Extraction example ──────────────────────────── */
+.extraction-demo {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  gap: 0;
+  align-items: start;
+  margin-top: 2rem;
+}
+
+.extraction-demo .arrow-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 3rem;
+  color: var(--accent-cyan);
+  font-size: 1.2rem;
+}
+
+.extraction-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.extraction-box-header {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.extraction-box-body {
+  padding: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.extraction-box-body .conv-line {
+  margin-bottom: 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+
+.extraction-box-body .conv-role {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.15rem;
+}
+
+.extraction-box-body .conv-role.user { color: var(--accent-cyan); }
+.extraction-box-body .conv-role.assistant { color: var(--accent-violet); }
+
+.extracted-item {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  background: rgba(255,255,255,0.02);
+  border-radius: 0 4px 4px 0;
+}
+
+.extracted-item .extracted-type {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.15rem;
+}
+
+.extracted-item .extracted-text {
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
 /* ── Dashboard showcase ────────────────────────────── */
 .dashboard-grid {
   display: grid;
@@ -750,6 +871,9 @@ footer a:hover { color: var(--accent-cyan); }
   .hero-actions { flex-direction: column; align-items: center; }
   .arch-diagram { padding: 1.5rem; }
   .arch-diagram pre { font-size: 0.55rem; }
+  .compare-table { font-size: 0.72rem; }
+  .extraction-demo { grid-template-columns: 1fr; }
+  .extraction-demo .arrow-col { transform: rotate(90deg); padding: 1rem 0; }
 }
 
 @media (max-width: 480px) {
@@ -836,6 +960,179 @@ footer a:hover { color: var(--accent-cyan); }
     <div class="stat-label">Languages Parsed</div>
   </div>
 </div>
+
+<!-- The Problem -->
+<section id="why" style="border-bottom: 1px solid var(--border); padding-bottom: 5rem;">
+  <div class="section-label">The Problem</div>
+  <h2 class="section-title">Claude Code forgets<br>everything. Every time.</h2>
+  <p class="section-desc" style="max-width: 700px;">
+    You explain your architecture. Your constraints. Your deployment process. Your naming conventions.
+    Then the session ends — and it's all gone. Next session, you start from scratch.
+    CLAUDE.md files help, but they're manual, static, and can't capture the nuance of a 2-hour debugging session.
+  </p>
+  <p style="font-size: 0.95rem; color: var(--text-primary); max-width: 700px; line-height: 1.7; margin-bottom: 2rem;">
+    <strong>ai-memory-db fixes this.</strong> It hooks into every Claude Code session, automatically extracts what matters, and injects relevant context back — silently, every prompt, forever. Your AI accumulates institutional knowledge the same way you do.
+  </p>
+
+  <!-- Comparison table -->
+  <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; margin-top: 3rem;">How it compares</h3>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th>Capability</th>
+        <th>CLAUDE.md</th>
+        <th>Cursor Memory</th>
+        <th>Windsurf Memories</th>
+        <th class="highlight">ai-memory-db</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Automatic extraction</td>
+        <td class="no">Manual only</td>
+        <td class="partial">Partial</td>
+        <td class="yes">Yes</td>
+        <td class="highlight">Yes — 3 passes/session</td>
+      </tr>
+      <tr>
+        <td>Knowledge types</td>
+        <td class="no">Free text</td>
+        <td class="partial">Key-value</td>
+        <td class="partial">Rules + memories</td>
+        <td class="highlight">8 types with priorities</td>
+      </tr>
+      <tr>
+        <td>Semantic search</td>
+        <td class="no">No</td>
+        <td class="partial">Basic</td>
+        <td class="no">No</td>
+        <td class="highlight">6-way parallel + RRF</td>
+      </tr>
+      <tr>
+        <td>Temporal decay</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="highlight">3-class exponential</td>
+      </tr>
+      <tr>
+        <td>Project isolation</td>
+        <td class="partial">Per-repo file</td>
+        <td class="no">Global</td>
+        <td class="partial">Per-workspace</td>
+        <td class="highlight">Per-repo + auto-promote</td>
+      </tr>
+      <tr>
+        <td>Entity/relationship graph</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="highlight">2-hop BFS traversal</td>
+      </tr>
+      <tr>
+        <td>Code graph (AST)</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="highlight">5 languages via tree-sitter</td>
+      </tr>
+      <tr>
+        <td>Guardrails</td>
+        <td class="partial">Manual rules</td>
+        <td class="no">No</td>
+        <td class="partial">Manual rules</td>
+        <td class="highlight">Auto-enforce + git stash</td>
+      </tr>
+      <tr>
+        <td>Data location</td>
+        <td class="yes">Local file</td>
+        <td class="no">Cloud</td>
+        <td class="yes">Local</td>
+        <td class="highlight">100% local (DuckDB)</td>
+      </tr>
+      <tr>
+        <td>Web dashboard</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="highlight">Full CRUD + graph viz</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Extraction Example -->
+<section id="extraction-example">
+  <div class="section-label">See It In Action</div>
+  <h2 class="section-title">What gets extracted<br>from a real conversation</h2>
+  <p class="section-desc">
+    Here's what happens when the extraction pipeline processes a typical debugging session. The left side is the conversation — the right is what the system stores.
+  </p>
+
+  <div class="extraction-demo">
+    <div class="extraction-box">
+      <div class="extraction-box-header">Conversation (session #14)</div>
+      <div class="extraction-box-body">
+        <div class="conv-line">
+          <div class="conv-role user">User</div>
+          <div style="color: var(--text-secondary);">The deploy is failing on staging. It's timing out on the health check after the ECS task starts.</div>
+        </div>
+        <div class="conv-line">
+          <div class="conv-role assistant">Assistant</div>
+          <div style="color: var(--text-secondary);">Looking at the ECS task definition... The health check path is /api/health but the app starts on port 8000, not 80. The ALB target group is configured for port 80.</div>
+        </div>
+        <div class="conv-line">
+          <div class="conv-role user">User</div>
+          <div style="color: var(--text-secondary);">Right, we changed the port last week when we added the gRPC listener. The Terraform in ops/terraform/staging/ecs.tf still has the old port.</div>
+        </div>
+        <div class="conv-line">
+          <div class="conv-role assistant">Assistant</div>
+          <div style="color: var(--text-secondary);">Fixed. Updated the target group port to 8000 and the container port mapping. Also added a health check grace period of 60s since the app takes ~30s to warm up.</div>
+        </div>
+        <div class="conv-line">
+          <div class="conv-role user">User</div>
+          <div style="color: var(--text-secondary);">Good. Also, never change the port without updating both the ECS task def AND the ALB target group — we've been burned by this twice now.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-col">&#10132;</div>
+
+    <div class="extraction-box">
+      <div class="extraction-box-header">Extracted Knowledge</div>
+      <div class="extraction-box-body">
+        <div class="extracted-item" style="border-color: var(--accent-rose);">
+          <div class="extracted-type" style="color: var(--accent-rose);">Guardrail (importance: 9)</div>
+          <div class="extracted-text">Never change the container port without updating both the ECS task definition AND the ALB target group. Files: ops/terraform/staging/ecs.tf</div>
+        </div>
+        <div class="extracted-item" style="border-color: var(--accent-cyan);">
+          <div class="extracted-type" style="color: var(--accent-cyan);">Fact (long-term)</div>
+          <div class="extracted-text">Production backend runs on port 8000 (changed from port 80 when gRPC listener was added)</div>
+        </div>
+        <div class="extracted-item" style="border-color: var(--accent-amber);">
+          <div class="extracted-type" style="color: var(--accent-amber);">Fact (medium-term)</div>
+          <div class="extracted-text">App requires ~30s to warm up; health check grace period set to 60s in ECS task definition</div>
+        </div>
+        <div class="extracted-item" style="border-color: var(--accent-violet);">
+          <div class="extracted-type" style="color: var(--accent-violet);">Error Solution</div>
+          <div class="extracted-text">ECS health check timeout on deploy → Check ALB target group port matches container port mapping</div>
+        </div>
+        <div class="extracted-item" style="border-color: var(--accent-emerald);">
+          <div class="extracted-type" style="color: var(--accent-emerald);">Relationship</div>
+          <div class="extracted-text">ecs.tf --[configures]--> ALB target group (port must match container)</div>
+        </div>
+        <div class="extracted-item" style="border-color: var(--accent-emerald);">
+          <div class="extracted-type" style="color: var(--accent-emerald);">Entity</div>
+          <div class="extracted-text">ops/terraform/staging/ecs.tf (artifact) — ECS task + ALB configuration</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 1.5rem; max-width: 700px; line-height: 1.6;">
+    Next session, when the user asks about deployments or edits ecs.tf, the guardrail surfaces automatically. The port fact is injected as context. The error solution is recalled if a similar timeout occurs. The user never has to explain any of this again.
+  </p>
+</section>
 
 <!-- How It Works -->
 <section id="how-it-works">
@@ -1247,7 +1544,7 @@ const observer = new IntersectionObserver((entries) => {
   });
 }, { threshold: 0.1 });
 
-document.querySelectorAll('.flow-step, .feature-card, .pipeline-item, .dashboard-card, .arch-pass-content, .dashboard-start-step').forEach(el => {
+document.querySelectorAll('.flow-step, .feature-card, .pipeline-item, .dashboard-card, .arch-pass-content, .dashboard-start-step, .extracted-item, .extraction-box').forEach(el => {
   el.style.opacity = '0';
   el.style.transform = 'translateY(16px)';
   el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';

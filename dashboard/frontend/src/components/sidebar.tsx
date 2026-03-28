@@ -21,6 +21,7 @@ import {
   Waypoints,
   ClipboardCheck,
   FolderOpen,
+  BookOpen,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -40,6 +41,7 @@ const NAV_ITEMS = [
   { href: "/questions", label: "Open Questions", icon: HelpCircle },
   { href: "/search", label: "Search", icon: Search },
   { href: "/review", label: "Review Queue", icon: ClipboardCheck },
+  { href: "/api-docs", label: "API Docs", icon: BookOpen },
 ];
 
 export function Sidebar() {

@@ -128,6 +128,31 @@ Every prompt triggers 6-way parallel retrieval, fused via Reciprocal Rank Fusion
 
 Results are fused, ranked, and capped at the token budget (4000 tokens per prompt, 3000 per session).
 
+## MCP Server
+
+The memory system includes an MCP (Model Context Protocol) server that gives any MCP-compatible AI tool on-demand read/write access to the knowledge base. This works alongside the hooks — hooks are automatic and passive, the MCP server is on-demand and active.
+
+**Tools exposed:**
+
+| Tool | Description |
+|------|-------------|
+| `memory_search` | Search across facts, guardrails, procedures, error_solutions, and decisions by semantic query. Accepts `types` filter and `limit`. |
+| `memory_store` | Store a fact, decision, guardrail, procedure, or error_solution. Accepts `text`, `type`, `importance` (1-10), and `file_paths`. |
+| `memory_guardrail` | Create a guardrail with `warning`, `rationale`, `consequence`, and `file_paths`. |
+| `memory_check_file` | Get all guardrails, procedures, facts, and error_solutions linked to a specific file path. |
+
+**Setup:** The installer registers the MCP server in `settings.json`. It runs via stdio (JSON-RPC 2.0) — no separate process to manage.
+
+**Compatibility:** Works with Claude Code, Cursor, Windsurf, Cline, and any other MCP-compatible coding agent. All agents share the same DuckDB knowledge base.
+
+**Example usage** (Claude calls these automatically when relevant):
+```
+memory_search(query="retry logic", types=["facts", "guardrails"], limit=5)
+memory_store(text="API rate limit is 1000 req/min", type="fact", importance=7)
+memory_guardrail(warning="Don't modify auth.py without tests", file_paths=["src/auth.py"])
+memory_check_file(file_path="src/auth.py")
+```
+
 ## System Hardening
 
 | Feature | Description |

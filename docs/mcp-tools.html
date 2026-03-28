@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Tools — ai-memory-db</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg-deep: #080b11; --bg-surface: #0d1117; --bg-card: #111820; --border: #1e2a3a;
+  --text-primary: #e2e8f0; --text-secondary: #8494a7; --text-muted: #4a5568;
+  --accent-cyan: #22d3ee; --accent-emerald: #34d399; --accent-amber: #f59e0b;
+  --accent-rose: #fb7185; --accent-violet: #a78bfa;
+  --font-sans: 'Outfit', system-ui, sans-serif; --font-mono: 'DM Mono', monospace;
+}
+body { font-family: var(--font-sans); background: var(--bg-deep); color: var(--text-primary); line-height: 1.6; }
+a { color: var(--accent-cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: var(--bg-surface); position: sticky; top: 0; z-index: 100; }
+nav .logo { font-family: var(--font-mono); font-weight: 500; font-size: 0.95rem; color: var(--accent-cyan); }
+nav .logo span { color: var(--text-muted); }
+nav .nav-links { display: flex; align-items: center; gap: 1.5rem; }
+nav .nav-links a { color: var(--text-secondary); font-size: 0.85rem; }
+nav .nav-links a:hover { color: var(--text-primary); text-decoration: none; }
+nav .nav-links a.active { color: var(--accent-cyan); }
+
+.container { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+h1 { font-size: 2rem; font-weight: 600; margin-bottom: 0.5rem; }
+.subtitle { color: var(--text-secondary); font-size: 1rem; margin-bottom: 2rem; font-weight: 300; }
+
+.intro { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 2.5rem; }
+.intro p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.7; }
+
+.tool-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 2rem; overflow: hidden; }
+.tool-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+.tool-name { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 500; color: var(--accent-cyan); }
+.tool-desc { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.25rem; }
+.tool-body { padding: 1.5rem; }
+
+.params-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600; margin-bottom: 0.75rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1.25rem; }
+th { text-align: left; font-weight: 500; color: var(--text-muted); padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+td { padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(30,42,58,0.5); }
+td.param-name { font-family: var(--font-mono); color: var(--accent-emerald); }
+td.param-type { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.8rem; }
+.required { color: var(--accent-amber); font-size: 0.75rem; font-weight: 600; }
+.optional { color: var(--text-muted); font-size: 0.75rem; }
+
+.example-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600; margin-bottom: 0.5rem; }
+.code-block { background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.25rem; font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-emerald); overflow-x: auto; position: relative; }
+.copy-btn { position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(255,255,255,0.1); border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-family: var(--font-mono); }
+.copy-btn:hover { background: rgba(255,255,255,0.2); color: var(--text-primary); }
+
+.compat { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+.compat-badge { padding: 0.3rem 0.75rem; background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.2); border-radius: 4px; font-size: 0.75rem; color: var(--accent-cyan); }
+
+footer { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border); margin-top: 3rem; }
+
+@media (max-width: 640px) {
+  .container { padding: 2rem 1rem; }
+  nav .nav-links a:not(.active) { display: none; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="logo">ai-memory-db <span>v1.0</span></a>
+  <div class="nav-links">
+    <a href="index.html">Home</a>
+    <a href="mcp-tools.html" class="active">MCP Tools</a>
+    <a href="rest-api.html">REST API</a>
+    <a href="https://github.com/gilmanb1/ai-memory-db">GitHub</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h1>MCP Tools</h1>
+  <p class="subtitle">Model Context Protocol tools for AI-powered coding agents</p>
+
+  <div class="intro">
+    <p>
+      The memory system includes an MCP server that gives any MCP-compatible AI tool on-demand
+      read/write access to the knowledge base. It communicates via stdio using JSON-RPC 2.0 —
+      no separate process to manage. The installer registers it automatically in your settings.json.
+    </p>
+    <div class="compat">
+      <span class="compat-badge">Claude Code</span>
+      <span class="compat-badge">Cursor</span>
+      <span class="compat-badge">Windsurf</span>
+      <span class="compat-badge">Cline</span>
+      <span class="compat-badge">Any MCP Agent</span>
+    </div>
+  </div>
+
+  <!-- memory_search -->
+  <div class="tool-card">
+    <div class="tool-header">
+      <div class="tool-name">memory_search</div>
+      <div class="tool-desc">Search all memory types by semantic query. Returns ranked results from facts, guardrails, procedures, error solutions, and decisions.</div>
+    </div>
+    <div class="tool-body">
+      <div class="params-title">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+        <tr><td class="param-name">query</td><td class="param-type">string</td><td><span class="required">yes</span></td><td>The search query text</td></tr>
+        <tr><td class="param-name">types</td><td class="param-type">string[]</td><td><span class="optional">no</span></td><td>Filter by type: facts, guardrails, procedures, error_solutions, decisions. Default: all.</td></tr>
+        <tr><td class="param-name">limit</td><td class="param-type">integer</td><td><span class="optional">no</span></td><td>Max results per type (default 10)</td></tr>
+      </table>
+      <div class="example-title">Example</div>
+      <div class="code-block">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button>
+        <code>memory_search(query="retry logic", types=["facts", "guardrails"], limit=5)</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- memory_store -->
+  <div class="tool-card">
+    <div class="tool-header">
+      <div class="tool-name">memory_store</div>
+      <div class="tool-desc">Store a fact, decision, guardrail, procedure, or error solution in the knowledge base.</div>
+    </div>
+    <div class="tool-body">
+      <div class="params-title">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+        <tr><td class="param-name">text</td><td class="param-type">string</td><td><span class="required">yes</span></td><td>The content to store</td></tr>
+        <tr><td class="param-name">type</td><td class="param-type">string</td><td><span class="required">yes</span></td><td>One of: fact, decision, guardrail, procedure, error_solution</td></tr>
+        <tr><td class="param-name">importance</td><td class="param-type">integer</td><td><span class="optional">no</span></td><td>Importance score 1-10 (default 7)</td></tr>
+        <tr><td class="param-name">file_paths</td><td class="param-type">string[]</td><td><span class="optional">no</span></td><td>File paths to associate with this memory</td></tr>
+      </table>
+      <div class="example-title">Example</div>
+      <div class="code-block">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button>
+        <code>memory_store(text="API rate limit is 1000 req/min", type="fact", importance=8, file_paths=["src/middleware.py"])</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- memory_guardrail -->
+  <div class="tool-card">
+    <div class="tool-header">
+      <div class="tool-name">memory_guardrail</div>
+      <div class="tool-desc">Create a guardrail — a protective rule that surfaces with highest priority when working with specific files.</div>
+    </div>
+    <div class="tool-body">
+      <div class="params-title">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+        <tr><td class="param-name">warning</td><td class="param-type">string</td><td><span class="required">yes</span></td><td>The guardrail warning text</td></tr>
+        <tr><td class="param-name">rationale</td><td class="param-type">string</td><td><span class="optional">no</span></td><td>Why this guardrail exists</td></tr>
+        <tr><td class="param-name">consequence</td><td class="param-type">string</td><td><span class="optional">no</span></td><td>What happens if the guardrail is violated</td></tr>
+        <tr><td class="param-name">file_paths</td><td class="param-type">string[]</td><td><span class="optional">no</span></td><td>File paths this guardrail protects</td></tr>
+      </table>
+      <div class="example-title">Example</div>
+      <div class="code-block">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button>
+        <code>memory_guardrail(warning="Never modify auth.py without running security tests", rationale="PCI compliance", consequence="Audit failure", file_paths=["src/auth.py"])</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- memory_check_file -->
+  <div class="tool-card">
+    <div class="tool-header">
+      <div class="tool-name">memory_check_file</div>
+      <div class="tool-desc">Get all guardrails, procedures, facts, and error solutions associated with a file path.</div>
+    </div>
+    <div class="tool-body">
+      <div class="params-title">Parameters</div>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+        <tr><td class="param-name">file_path</td><td class="param-type">string</td><td><span class="required">yes</span></td><td>The file path to check</td></tr>
+      </table>
+      <div class="example-title">Example</div>
+      <div class="code-block">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button>
+        <code>memory_check_file(file_path="src/auth.py")</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/gilmanb1/ai-memory-db">ai-memory-db</a> &middot; MIT License &middot; Built for <a href="https://claude.ai/code">Claude Code</a>
+</footer>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REST API — ai-memory-db</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg-deep: #080b11; --bg-surface: #0d1117; --bg-card: #111820; --border: #1e2a3a;
+  --text-primary: #e2e8f0; --text-secondary: #8494a7; --text-muted: #4a5568;
+  --accent-cyan: #22d3ee; --accent-emerald: #34d399; --accent-amber: #f59e0b;
+  --accent-blue: #60a5fa;
+  --font-sans: 'Outfit', system-ui, sans-serif; --font-mono: 'DM Mono', monospace;
+}
+body { font-family: var(--font-sans); background: var(--bg-deep); color: var(--text-primary); line-height: 1.6; }
+a { color: var(--accent-cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; border-bottom: 1px solid var(--border); background: var(--bg-surface); position: sticky; top: 0; z-index: 100; }
+nav .logo { font-family: var(--font-mono); font-weight: 500; font-size: 0.95rem; color: var(--accent-cyan); }
+nav .logo span { color: var(--text-muted); }
+nav .nav-links { display: flex; align-items: center; gap: 1.5rem; }
+nav .nav-links a { color: var(--text-secondary); font-size: 0.85rem; }
+nav .nav-links a:hover { color: var(--text-primary); text-decoration: none; }
+nav .nav-links a.active { color: var(--accent-cyan); }
+
+.container { max-width: 1000px; margin: 0 auto; padding: 3rem 2rem; }
+h1 { font-size: 2rem; font-weight: 600; margin-bottom: 0.5rem; }
+.subtitle { color: var(--text-secondary); font-size: 1rem; margin-bottom: 2rem; font-weight: 300; }
+h2 { font-size: 1.15rem; font-weight: 600; margin: 2.5rem 0 1rem; color: var(--text-primary); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+
+.intro { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+.intro p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.7; }
+code { font-family: var(--font-mono); background: rgba(34,211,238,0.1); color: var(--accent-cyan); padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.8rem; }
+
+.endpoint-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.endpoint-table th { text-align: left; font-weight: 500; color: var(--text-muted); padding: 0.75rem 1rem; background: var(--bg-surface); border-bottom: 1px solid var(--border); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.endpoint-table td { padding: 0.6rem 1rem; border-bottom: 1px solid rgba(30,42,58,0.5); vertical-align: top; }
+.endpoint-table tr:last-child td { border-bottom: none; }
+.endpoint-table tr:hover { background: rgba(255,255,255,0.02); }
+
+.method { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.7rem; font-weight: 700; font-family: var(--font-mono); }
+.method-get { background: rgba(52,211,153,0.15); color: var(--accent-emerald); }
+.method-post { background: rgba(96,165,250,0.15); color: var(--accent-blue); }
+.method-put { background: rgba(245,158,11,0.15); color: var(--accent-amber); }
+.method-delete { background: rgba(251,113,133,0.15); color: #fb7185; }
+
+.path { font-family: var(--font-mono); color: var(--accent-emerald); font-size: 0.8rem; }
+.params { color: var(--text-muted); font-size: 0.8rem; }
+
+footer { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border); margin-top: 3rem; }
+
+@media (max-width: 640px) {
+  .container { padding: 2rem 1rem; }
+  .endpoint-table { font-size: 0.75rem; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="logo">ai-memory-db <span>v1.0</span></a>
+  <div class="nav-links">
+    <a href="index.html">Home</a>
+    <a href="mcp-tools.html">MCP Tools</a>
+    <a href="rest-api.html" class="active">REST API</a>
+    <a href="https://github.com/gilmanb1/ai-memory-db">GitHub</a>
+  </div>
+</nav>
+
+<div class="container">
+  <h1>REST API</h1>
+  <p class="subtitle">Dashboard backend API for the memory knowledge base</p>
+
+  <div class="intro">
+    <p>
+      Base URL: <code>http://localhost:9111</code>. All endpoints return JSON.
+      List endpoints support <code>scope</code> filtering and pagination via <code>limit</code> / <code>offset</code>.
+      Start the backend with: <code>cd dashboard/backend && uvicorn server:app --port 9111</code>
+    </p>
+  </div>
+
+  <h2>Knowledge Items</h2>
+  <table class="endpoint-table">
+    <tr><th style="width:70px">Method</th><th>Endpoint</th><th>Description</th><th>Parameters</th></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/facts</td><td>List facts</td><td class="params">scope, temporal_class, limit, offset</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td class="path">/api/v1/facts</td><td>Create a fact</td><td class="params">text, category, temporal_class, importance (body)</td></tr>
+    <tr><td><span class="method method-put">PUT</span></td><td class="path">/api/v1/facts/{id}</td><td>Update a fact</td><td class="params">text, category, importance (body)</td></tr>
+    <tr><td><span class="method method-delete">DELETE</span></td><td class="path">/api/v1/facts/{id}</td><td>Soft-delete a fact</td><td class="params">—</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/decisions</td><td>List decisions</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/guardrails</td><td>List guardrails</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/procedures</td><td>List procedures</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/error-solutions</td><td>List error solutions</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/observations</td><td>List observations</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/ideas</td><td>List ideas</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/questions</td><td>List open questions</td><td class="params">limit, offset</td></tr>
+  </table>
+
+  <h2>Entities & Relationships</h2>
+  <table class="endpoint-table">
+    <tr><th style="width:70px">Method</th><th>Endpoint</th><th>Description</th><th>Parameters</th></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/entities</td><td>List entities</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/relationships</td><td>List relationships</td><td class="params">scope, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/relationships/graph</td><td>Cytoscape-format graph data (nodes + edges)</td><td class="params">scope, limit</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td class="path">/api/v1/relationships</td><td>Create a relationship</td><td class="params">from_entity, to_entity, rel_type, description (body)</td></tr>
+  </table>
+
+  <h2>Graphs & Visualization</h2>
+  <table class="endpoint-table">
+    <tr><th style="width:70px">Method</th><th>Endpoint</th><th>Description</th><th>Parameters</th></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/knowledge-graph</td><td>Unified knowledge graph (all types as nodes)</td><td class="params">types, scope, limit, cluster_by</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/code-graph/graph</td><td>Code dependency graph</td><td class="params">scope, limit</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/code-graph/stats</td><td>Code graph statistics</td><td class="params">—</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/code-graph/files</td><td>List indexed code files</td><td class="params">language, limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/code-graph/files/{path}/symbols</td><td>Symbols in a file</td><td class="params">—</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/code-graph/symbols/search</td><td>Search code symbols</td><td class="params">q, limit</td></tr>
+  </table>
+
+  <h2>Search & Chat</h2>
+  <table class="endpoint-table">
+    <tr><th style="width:70px">Method</th><th>Endpoint</th><th>Description</th><th>Parameters</th></tr>
+    <tr><td><span class="method method-post">POST</span></td><td class="path">/api/v1/search</td><td>Semantic search across all types</td><td class="params">query, types, scope, limit (body)</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td class="path">/api/v1/chat/stream</td><td>Streaming chat with memory (NDJSON)</td><td class="params">query, scope, conversation_history (body)</td></tr>
+  </table>
+
+  <h2>Review Queue</h2>
+  <table class="endpoint-table">
+    <tr><th style="width:70px">Method</th><th>Endpoint</th><th>Description</th><th>Parameters</th></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/review</td><td>List review queue items</td><td class="params">status (pending|approved|rejected), limit</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td class="path">/api/v1/review/{id}/approve</td><td>Approve and store a flagged item</td><td class="params">—</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td class="path">/api/v1/review/{id}/reject</td><td>Reject a flagged item</td><td class="params">—</td></tr>
+  </table>
+
+  <h2>System</h2>
+  <table class="endpoint-table">
+    <tr><th style="width:70px">Method</th><th>Endpoint</th><th>Description</th><th>Parameters</th></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/stats</td><td>Database statistics (counts by type)</td><td class="params">—</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/scopes</td><td>List project scopes with item counts</td><td class="params">—</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/v1/sessions</td><td>List recorded sessions</td><td class="params">limit, offset</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td class="path">/api/health</td><td>Health check</td><td class="params">—</td></tr>
+  </table>
+</div>
+
+<footer>
+  <a href="https://github.com/gilmanb1/ai-memory-db">ai-memory-db</a> &middot; MIT License &middot; Built for <a href="https://claude.ai/code">Claude Code</a>
+</footer>
+</body>
+</html>

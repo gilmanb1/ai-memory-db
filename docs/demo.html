@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-memory-db — Interactive Demo</title>
+<meta name="description" content="Try the ai-memory-db knowledge base in your browser. No installation required.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #080b11;
+  --bg-surface: #0d1117;
+  --bg-card: #111820;
+  --bg-card-hover: #161e28;
+  --border: #1e2a3a;
+  --border-bright: #2a3a4e;
+  --text-primary: #e2e8f0;
+  --text-secondary: #8494a7;
+  --text-muted: #4a5568;
+  --accent-cyan: #22d3ee;
+  --accent-amber: #f59e0b;
+  --accent-emerald: #34d399;
+  --accent-rose: #fb7185;
+  --accent-violet: #a78bfa;
+  --font-body: 'Outfit', -apple-system, sans-serif;
+  --font-mono: 'DM Mono', 'SF Mono', monospace;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Nav ─────────────────────────────────────────── */
+.demo-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1.5rem;
+  background: rgba(8, 11, 17, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.demo-nav .logo {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent-cyan);
+  text-decoration: none;
+}
+
+.demo-nav .logo span { color: var(--text-muted); }
+
+.demo-nav .nav-links {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.demo-nav .nav-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  transition: all 0.15s;
+}
+
+.demo-nav .nav-links a:hover { color: var(--text-primary); background: var(--bg-card); }
+
+.demo-nav .nav-links a.active {
+  color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  border-radius: 5px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+}
+
+.btn-cyan { background: var(--accent-cyan); color: var(--bg-deep); }
+.btn-cyan:hover { background: #06b6d4; }
+.btn-outline { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-outline:hover { border-color: var(--border-bright); color: var(--text-primary); }
+.btn-emerald { background: var(--accent-emerald); color: var(--bg-deep); }
+.btn-emerald:hover { background: #10b981; }
+.btn-rose { background: rgba(251, 113, 133, 0.15); color: var(--accent-rose); border: 1px solid rgba(251, 113, 133, 0.3); }
+.btn-rose:hover { background: rgba(251, 113, 133, 0.25); }
+
+/* ── Layout ──────────────────────────────────────── */
+.demo-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.demo-sidebar {
+  width: 200px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 0.75rem 0;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.demo-sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.12s;
+  cursor: pointer;
+}
+
+.demo-sidebar a:hover { background: var(--bg-card); color: var(--text-primary); }
+.demo-sidebar a.active { background: rgba(34, 211, 238, 0.06); color: var(--accent-cyan); }
+.demo-sidebar .sidebar-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  padding: 0.75rem 1rem 0.35rem;
+}
+
+.demo-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+/* ── Panels ──────────────────────────────────────── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Stats cards ─────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.stat-card:hover { border-color: var(--border-bright); transform: translateY(-1px); }
+
+.stat-card .stat-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.stat-card .stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 500;
+}
+
+/* ── Table ────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  max-width: 400px;
+}
+
+.data-table tr:hover td { background: var(--bg-card); }
+
+.data-table .text-col { color: var(--text-primary); }
+
+/* ── Badges ──────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.badge-long { color: var(--accent-emerald); border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.08); }
+.badge-medium { color: var(--accent-amber); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+.badge-short { color: var(--accent-rose); border-color: rgba(251,113,133,0.3); background: rgba(251,113,133,0.08); }
+.badge-cat { color: var(--text-secondary); border-color: var(--border); background: var(--bg-card); }
+
+/* ── Decay bar ───────────────────────────────────── */
+.decay-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.decay-track {
+  width: 50px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.decay-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+.decay-value { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-muted); }
+
+/* ── Toolbar ─────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.toolbar h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.toolbar input[type="text"] {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  outline: none;
+  width: 220px;
+}
+
+.toolbar input:focus { border-color: var(--accent-cyan); }
+
+.toolbar select {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+/* ── Modal ────────────────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.modal-body { padding: 1.25rem; }
+
+.modal-body label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+  margin-top: 0.75rem;
+}
+
+.modal-body label:first-child { margin-top: 0; }
+
+.modal-body input, .modal-body textarea, .modal-body select {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  outline: none;
+}
+
+.modal-body textarea { resize: vertical; min-height: 70px; font-family: var(--font-body); }
+.modal-body input:focus, .modal-body textarea:focus { border-color: var(--accent-cyan); }
+
+.modal-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ── Toast ────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  z-index: 300;
+  animation: toastIn 0.3s ease;
+  font-family: var(--font-mono);
+}
+
+.toast-success { background: rgba(52,211,153,0.15); color: var(--accent-emerald); border: 1px solid rgba(52,211,153,0.3); }
+.toast-error { background: rgba(251,113,133,0.15); color: var(--accent-rose); border: 1px solid rgba(251,113,133,0.3); }
+
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Search results ──────────────────────────────── */
+.search-result {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  transition: border-color 0.15s;
+}
+
+.search-result:hover { border-color: var(--border-bright); }
+
+.search-result .sr-type { font-family: var(--font-mono); font-size: 0.65rem; margin-bottom: 0.25rem; }
+.search-result .sr-text { font-size: 0.85rem; color: var(--text-primary); }
+.search-result .sr-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.35rem; }
+
+/* ── Loading ─────────────────────────────────────── */
+#loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#loading .spinner {
+  width: 24px; height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Banner ──────────────────────────────────────── */
+.demo-banner {
+  background: rgba(34, 211, 238, 0.06);
+  border-bottom: 1px solid rgba(34, 211, 238, 0.15);
+  padding: 0.4rem 1.5rem;
+  font-size: 0.72rem;
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+.demo-banner a { color: var(--text-primary); text-decoration: underline; }
+
+/* ── Responsive ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .demo-sidebar { width: 56px; }
+  .demo-sidebar a span { display: none; }
+  .demo-sidebar .sidebar-label { display: none; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div style="font-size: 0.85rem; color: var(--text-secondary);">Initializing in-browser database...</div>
+</div>
+
+<div id="app" style="display: none; flex-direction: column; min-height: 100vh;">
+
+<div class="demo-banner">
+  This is a live interactive demo running entirely in your browser via WebAssembly. No server, no API keys.
+  <a href="index.html">Back to project page</a>
+</div>
+
+<nav class="demo-nav">
+  <a href="index.html" class="logo">ai-memory-db <span>demo</span></a>
+  <div class="nav-links">
+    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-sm btn-outline">GitHub</a>
+  </div>
+</nav>
+
+<div class="demo-body">
+  <aside class="demo-sidebar">
+    <div class="sidebar-label">Views</div>
+    <a onclick="showPanel('overview')" class="active" id="nav-overview">&#128202; <span>Overview</span></a>
+    <a onclick="showPanel('facts')" id="nav-facts">&#129504; <span>Facts</span></a>
+    <a onclick="showPanel('decisions')" id="nav-decisions">&#128161; <span>Decisions</span></a>
+    <a onclick="showPanel('entities')" id="nav-entities">&#128101; <span>Entities</span></a>
+    <a onclick="showPanel('relationships')" id="nav-relationships">&#128279; <span>Relationships</span></a>
+    <a onclick="showPanel('guardrails')" id="nav-guardrails">&#128737; <span>Guardrails</span></a>
+    <a onclick="showPanel('procedures')" id="nav-procedures">&#128221; <span>Procedures</span></a>
+    <a onclick="showPanel('errors')" id="nav-errors">&#128027; <span>Error Fixes</span></a>
+    <a onclick="showPanel('search')" id="nav-search">&#128270; <span>Search</span></a>
+  </aside>
+
+  <main class="demo-main">
+
+    <!-- Overview -->
+    <div class="panel active" id="panel-overview">
+      <div class="toolbar"><h2>Knowledge Base Overview</h2></div>
+      <div class="stats-grid" id="stats-grid"></div>
+    </div>
+
+    <!-- Facts -->
+    <div class="panel" id="panel-facts">
+      <div class="toolbar">
+        <h2>Facts <span id="facts-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <input type="text" id="facts-filter" placeholder="Filter..." oninput="renderFacts()">
+        <select id="facts-class" onchange="renderFacts()">
+          <option value="">All classes</option>
+          <option value="long">Long</option>
+          <option value="medium">Medium</option>
+          <option value="short">Short</option>
+        </select>
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('fact')">+ Add Fact</button>
+      </div>
+      <div id="facts-table"></div>
+    </div>
+
+    <!-- Decisions -->
+    <div class="panel" id="panel-decisions">
+      <div class="toolbar">
+        <h2>Decisions <span id="decisions-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <input type="text" id="decisions-filter" placeholder="Filter..." oninput="renderDecisions()">
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('decision')">+ Add Decision</button>
+      </div>
+      <div id="decisions-table"></div>
+    </div>
+
+    <!-- Entities -->
+    <div class="panel" id="panel-entities">
+      <div class="toolbar">
+        <h2>Entities <span id="entities-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <input type="text" id="entities-filter" placeholder="Filter..." oninput="renderEntities()">
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('entity')">+ Add Entity</button>
+      </div>
+      <div id="entities-table"></div>
+    </div>
+
+    <!-- Relationships -->
+    <div class="panel" id="panel-relationships">
+      <div class="toolbar">
+        <h2>Relationships <span id="relationships-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <input type="text" id="rels-filter" placeholder="Filter..." oninput="renderRelationships()">
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('relationship')">+ Add Relationship</button>
+      </div>
+      <div id="relationships-table"></div>
+    </div>
+
+    <!-- Guardrails -->
+    <div class="panel" id="panel-guardrails">
+      <div class="toolbar">
+        <h2>Guardrails <span id="guardrails-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('guardrail')">+ Add Guardrail</button>
+      </div>
+      <div id="guardrails-table"></div>
+    </div>
+
+    <!-- Procedures -->
+    <div class="panel" id="panel-procedures">
+      <div class="toolbar">
+        <h2>Procedures <span id="procedures-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('procedure')">+ Add Procedure</button>
+      </div>
+      <div id="procedures-table"></div>
+    </div>
+
+    <!-- Error Solutions -->
+    <div class="panel" id="panel-errors">
+      <div class="toolbar">
+        <h2>Error Solutions <span id="errors-count" style="color: var(--text-muted); font-weight: 400;"></span></h2>
+        <button class="btn-sm btn-emerald" onclick="openCreateModal('error_solution')">+ Add Error Fix</button>
+      </div>
+      <div id="errors-table"></div>
+    </div>
+
+    <!-- Search -->
+    <div class="panel" id="panel-search">
+      <div class="toolbar">
+        <h2>Search</h2>
+        <input type="text" id="search-input" placeholder="Search across all knowledge..." style="width: 350px;" onkeydown="if(event.key==='Enter')runSearch()">
+        <button class="btn-sm btn-cyan" onclick="runSearch()">Search</button>
+      </div>
+      <div id="search-results" style="color: var(--text-muted); font-size: 0.85rem;">Type a query and press Enter.</div>
+    </div>
+
+  </main>
+</div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header" id="modal-title">Create</div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-sm btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn-sm btn-emerald" id="modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Database setup ──────────────────────────────────────────────────
+let db;
+
+async function initDB() {
+  const SQL = await initSqlJs({
+    locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${f}`
+  });
+  db = new SQL.Database();
+
+  // Create schema
+  db.run(`
+    CREATE TABLE facts (
+      id TEXT PRIMARY KEY, text TEXT NOT NULL, category TEXT DEFAULT 'contextual',
+      temporal_class TEXT DEFAULT 'short', confidence TEXT DEFAULT 'medium',
+      decay_score REAL DEFAULT 1.0, session_count INTEGER DEFAULT 1,
+      importance INTEGER DEFAULT 5, scope TEXT DEFAULT '__global__',
+      times_recalled INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE decisions (
+      id TEXT PRIMARY KEY, text TEXT NOT NULL,
+      temporal_class TEXT DEFAULT 'long', decay_score REAL DEFAULT 1.0,
+      session_count INTEGER DEFAULT 1, importance INTEGER DEFAULT 7,
+      scope TEXT DEFAULT '__global__', is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE entities (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, entity_type TEXT DEFAULT 'general',
+      session_count INTEGER DEFAULT 1, scope TEXT DEFAULT '__global__',
+      is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE relationships (
+      id TEXT PRIMARY KEY, from_entity TEXT NOT NULL, to_entity TEXT NOT NULL,
+      rel_type TEXT NOT NULL, description TEXT, strength REAL DEFAULT 1.0,
+      session_count INTEGER DEFAULT 1, scope TEXT DEFAULT '__global__',
+      is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE guardrails (
+      id TEXT PRIMARY KEY, warning TEXT NOT NULL, rationale TEXT,
+      consequence TEXT, importance INTEGER DEFAULT 9,
+      scope TEXT DEFAULT '__global__', is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE procedures (
+      id TEXT PRIMARY KEY, task_description TEXT NOT NULL, steps TEXT NOT NULL,
+      importance INTEGER DEFAULT 7, temporal_class TEXT DEFAULT 'long',
+      decay_score REAL DEFAULT 1.0, scope TEXT DEFAULT '__global__',
+      is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE error_solutions (
+      id TEXT PRIMARY KEY, error_pattern TEXT NOT NULL, solution TEXT NOT NULL,
+      error_context TEXT, confidence TEXT DEFAULT 'high',
+      times_applied INTEGER DEFAULT 0, scope TEXT DEFAULT '__global__',
+      is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  seedData();
+}
+
+function uid() { return crypto.randomUUID(); }
+
+function seedData() {
+  const facts = [
+    ["The project uses DuckDB for storage with HNSW vector indexes", "architecture", "long", 0.98, 8, 8],
+    ["Ollama serves nomic-embed-text (768-dim) for local embeddings", "technical", "long", 0.97, 7, 7],
+    ["Claude Sonnet handles knowledge extraction via tool_use API", "technical", "long", 0.96, 6, 9],
+    ["Dedup threshold is 0.92 cosine similarity — reinforce, don't duplicate", "constraint", "long", 0.95, 5, 8],
+    ["Token budget: 3000 for session context, 4000 per-prompt recall", "constraint", "long", 0.94, 4, 7],
+    ["Three extraction triggers: status line at 40/70/90%, PreCompact, SessionEnd", "operational", "long", 0.93, 6, 8],
+    ["Short-term items decay at 0.18/day, medium at 0.04/day, long at 0.007/day", "technical", "long", 0.92, 3, 6],
+    ["Guardrails are surfaced before all other facts and never decay", "architecture", "long", 0.99, 9, 10],
+    ["The /remember command stores facts immediately with temporal_class=long", "operational", "long", 0.91, 5, 6],
+    ["Project scoping uses git rev-parse --show-toplevel for isolation", "implementation", "long", 0.90, 4, 7],
+    ["Auto-promotion to global when seen in 3+ distinct projects", "architecture", "medium", 0.85, 3, 6],
+    ["BM25 full-text search uses DuckDB FTS extension", "technical", "medium", 0.82, 2, 5],
+    ["6-way parallel retrieval: semantic, BM25, graph, temporal, path, code", "architecture", "long", 0.97, 7, 9],
+    ["Reciprocal Rank Fusion (RRF) merges results from all retrieval strategies", "technical", "medium", 0.80, 2, 6],
+    ["Tree-sitter parses TypeScript, JavaScript, Go, and Rust code", "implementation", "long", 0.88, 3, 7],
+    ["PostToolUse hook re-parses files when Claude edits them", "operational", "medium", 0.78, 2, 5],
+    ["Observations are synthesized from facts by the consolidation engine", "architecture", "medium", 0.75, 2, 6],
+    ["The web dashboard polls every 3 seconds for live updates", "implementation", "short", 0.60, 1, 4],
+    ["Correction detection auto-supersedes facts when user says 'that's wrong'", "bug_pattern", "medium", 0.77, 2, 7],
+    ["Session narratives store cumulative summaries across extraction passes", "technical", "medium", 0.73, 2, 5],
+    ["Entity graph uses 2-hop BFS through relationships for recall", "architecture", "long", 0.89, 4, 7],
+    ["ONNX Runtime provides in-process embeddings at ~3ms per call", "technical", "medium", 0.70, 1, 5],
+    ["Fact file links connect facts to specific file paths for path-based recall", "implementation", "medium", 0.72, 2, 5],
+    ["Community summaries cluster facts by shared entities using union-find", "architecture", "medium", 0.68, 1, 6],
+    ["The status line displays context window usage and memory system state", "operational", "short", 0.50, 1, 3],
+  ];
+
+  facts.forEach(([text, cat, tc, ds, sc, imp]) => {
+    db.run("INSERT INTO facts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+      [uid(), text, cat, tc, "high", ds, sc, imp, "__global__", Math.floor(Math.random()*5), 1, "2026-03-15"]);
+  });
+
+  const decisions = [
+    ["Use DuckDB over PostgreSQL for zero-config local storage", "long", 0.95, 5, 9],
+    ["Use Ollama for embeddings to keep everything local-first", "long", 0.93, 4, 8],
+    ["Implement 6-way parallel retrieval instead of semantic-only", "long", 0.90, 3, 9],
+    ["Store guardrails with highest recall priority (always surfaced)", "long", 0.92, 4, 10],
+    ["Use tree-sitter for multi-language code parsing, stdlib ast for Python", "long", 0.88, 3, 7],
+    ["Dedup via cosine similarity (0.92) rather than exact text match", "long", 0.91, 4, 8],
+    ["Soft-delete with 30-day purge window instead of hard delete", "medium", 0.82, 2, 6],
+    ["Cap token budgets at 3000 session / 4000 prompt to prevent bloat", "long", 0.89, 3, 7],
+  ];
+
+  decisions.forEach(([text, tc, ds, sc, imp]) => {
+    db.run("INSERT INTO decisions VALUES (?,?,?,?,?,?,?,?,?)",
+      [uid(), text, tc, ds, sc, imp, "__global__", 1, "2026-03-10"]);
+  });
+
+  const entities = [
+    ["DuckDB", "technology"], ["Ollama", "technology"], ["Claude Code", "technology"],
+    ["nomic-embed-text", "technology"], ["tree-sitter", "technology"], ["ONNX Runtime", "technology"],
+    ["Next.js", "technology"], ["Cytoscape.js", "technology"], ["FastAPI", "technology"],
+    ["Python", "technology"], ["TypeScript", "technology"], ["Go", "technology"], ["Rust", "technology"],
+    ["Claude Sonnet", "technology"], ["DuckDB FTS", "technology"], ["HNSW", "technology"],
+    ["ai-memory-db", "project"], ["knowledge.duckdb", "artifact"],
+    ["SessionStart", "hook"], ["UserPromptSubmit", "hook"], ["PostToolUse", "hook"],
+    ["StatusLine", "hook"], ["PreCompact", "hook"], ["SessionEnd", "hook"],
+  ];
+
+  entities.forEach(([name, type]) => {
+    db.run("INSERT INTO entities VALUES (?,?,?,?,?,?,?)",
+      [uid(), name, type, Math.ceil(Math.random()*8), "__global__", 1, "2026-03-08"]);
+  });
+
+  const rels = [
+    ["ai-memory-db", "uses", "DuckDB", "Primary storage backend", 1.0],
+    ["ai-memory-db", "uses", "Ollama", "Local embedding generation", 0.9],
+    ["ai-memory-db", "uses", "Claude Sonnet", "Knowledge extraction", 0.9],
+    ["ai-memory-db", "uses", "tree-sitter", "Multi-language code parsing", 0.7],
+    ["ai-memory-db", "uses", "ONNX Runtime", "In-process embeddings fallback", 0.6],
+    ["DuckDB", "provides", "HNSW", "Vector similarity search acceleration", 0.8],
+    ["DuckDB", "provides", "DuckDB FTS", "BM25 full-text search", 0.8],
+    ["Ollama", "serves", "nomic-embed-text", "768-dim embedding model", 0.9],
+    ["Next.js", "powers", "Cytoscape.js", "Graph visualization in dashboard", 0.7],
+    ["FastAPI", "serves", "Next.js", "Dashboard backend API", 0.8],
+    ["SessionStart", "triggers", "ai-memory-db", "Recall injection at session open", 0.9],
+    ["StatusLine", "triggers", "ai-memory-db", "Extraction at 40/70/90% context", 0.9],
+    ["PostToolUse", "triggers", "ai-memory-db", "Code graph update on file edit", 0.7],
+    ["Python", "parsed_by", "ai-memory-db", "Via stdlib ast module", 0.8],
+    ["TypeScript", "parsed_by", "tree-sitter", "Via tree-sitter-typescript", 0.8],
+    ["Go", "parsed_by", "tree-sitter", "Via tree-sitter-go", 0.7],
+    ["Rust", "parsed_by", "tree-sitter", "Via tree-sitter-rust", 0.7],
+  ];
+
+  rels.forEach(([from, type, to, desc, str]) => {
+    db.run("INSERT INTO relationships VALUES (?,?,?,?,?,?,?,?,?,?)",
+      [uid(), from, to, type, desc, str, Math.ceil(Math.random()*5), "__global__", 1, "2026-03-12"]);
+  });
+
+  const guardrails = [
+    ["Do NOT put mcpServers config in ~/.claude/settings.json", "Claude Code ignores settings.json for MCP — use ~/.claude.json", "MCP tools will not appear and will not be available"],
+    ["Do not add top-level imports outside uv script dependency blocks", "Hook scripts run in isolated uv environments", "Status bar shows 'mem: err'; extractions silently fail"],
+    ["Never hard-delete items — always soft-delete with deactivated_at", "Allows 30-day recovery window and audit trail", "Data loss with no recovery path"],
+  ];
+
+  guardrails.forEach(([w, r, c]) => {
+    db.run("INSERT INTO guardrails VALUES (?,?,?,?,?,?,?,?)",
+      [uid(), w, r, c, 9, "__global__", 1, "2026-03-05"]);
+  });
+
+  const procedures = [
+    ["Register a user-scoped MCP server", "1. Run: claude mcp add --scope user -e KEY=value <name> <command>\n2. Verify: claude mcp list\n3. Restart Claude Code\n4. Run /mcp to confirm", 8],
+    ["Run the benchmark suite", "1. python3 test_memory.py\n2. python3 bench/coding_bench_onnx.py\n3. python3 bench/live_bench.py", 6],
+    ["Export and restore memory", "1. /export-memory --output backup.json\n2. Copy backup.json to safe location\n3. To restore: /restore-memory <snapshot>", 7],
+  ];
+
+  procedures.forEach(([task, steps, imp]) => {
+    db.run("INSERT INTO procedures VALUES (?,?,?,?,?,?,?,?,?)",
+      [uid(), task, steps, imp, "long", 1.0, "__global__", 1, "2026-03-07"]);
+  });
+
+  const errors = [
+    ["ModuleNotFoundError: No module named 'numpy'", "Add numpy>=1.24.0 to uv script inline dependencies", "Hook scripts using memory.embeddings", "high", 3],
+    ["DuckDB IOException: Conflicting lock is held", "Retry with exponential backoff (5 attempts, 150ms-2.4s)", "Multiple processes accessing knowledge.duckdb", "high", 5],
+    ["claude mcp add: Invalid environment variable format", "Use -e KEY=VALUE flags, not positional arguments", "Registering MCP servers with env vars", "medium", 2],
+  ];
+
+  errors.forEach(([pat, sol, ctx, conf, applied]) => {
+    db.run("INSERT INTO error_solutions VALUES (?,?,?,?,?,?,?,?,?)",
+      [uid(), pat, sol, ctx, conf, applied, "__global__", 1, "2026-03-14"]);
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function query(sql, params=[]) {
+  const result = db.exec(sql, params);
+  if (!result.length) return [];
+  const cols = result[0].columns;
+  return result[0].values.map(row => {
+    const obj = {};
+    cols.forEach((c, i) => obj[c] = row[i]);
+    return obj;
+  });
+}
+
+function showToast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+function decayBar(score) {
+  const pct = Math.max(0, Math.min(100, score * 100));
+  const color = pct >= 80 ? 'var(--accent-emerald)' : pct >= 50 ? 'var(--accent-amber)' : 'var(--accent-rose)';
+  return `<span class="decay-bar"><span class="decay-track"><span class="decay-fill" style="width:${pct}%;background:${color}"></span></span><span class="decay-value">${score.toFixed(2)}</span></span>`;
+}
+
+function classBadge(tc) {
+  return `<span class="badge badge-${tc}">${tc}</span>`;
+}
+
+function truncate(s, n=80) {
+  return s && s.length > n ? s.slice(0, n) + '...' : (s || '');
+}
+
+// ── Panel switching ─────────────────────────────────────────────────
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.demo-sidebar a').forEach(a => a.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+
+  const renderers = { overview: renderOverview, facts: renderFacts, decisions: renderDecisions,
+    entities: renderEntities, relationships: renderRelationships, guardrails: renderGuardrails,
+    procedures: renderProcedures, errors: renderErrors };
+  if (renderers[name]) renderers[name]();
+}
+
+// ── Renderers ───────────────────────────────────────────────────────
+function renderOverview() {
+  const tables = [
+    { name: 'Facts', table: 'facts', panel: 'facts', color: 'var(--accent-cyan)' },
+    { name: 'Decisions', table: 'decisions', panel: 'decisions', color: 'var(--accent-amber)' },
+    { name: 'Entities', table: 'entities', panel: 'entities', color: 'var(--accent-emerald)' },
+    { name: 'Relationships', table: 'relationships', panel: 'relationships', color: 'var(--accent-violet)' },
+    { name: 'Guardrails', table: 'guardrails', panel: 'guardrails', color: 'var(--accent-rose)' },
+    { name: 'Procedures', table: 'procedures', panel: 'procedures', color: 'var(--accent-cyan)' },
+    { name: 'Error Fixes', table: 'error_solutions', panel: 'errors', color: 'var(--accent-amber)' },
+  ];
+
+  document.getElementById('stats-grid').innerHTML = tables.map(t => {
+    const count = query(`SELECT COUNT(*) as c FROM ${t.table} WHERE is_active=1`)[0].c;
+    return `<div class="stat-card" onclick="showPanel('${t.panel}')">
+      <div class="stat-label">${t.name}</div>
+      <div class="stat-value" style="color:${t.color}">${count}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderFacts() {
+  const filter = document.getElementById('facts-filter').value.toLowerCase();
+  const cls = document.getElementById('facts-class').value;
+  let sql = "SELECT * FROM facts WHERE is_active=1";
+  if (cls) sql += ` AND temporal_class='${cls}'`;
+  sql += " ORDER BY decay_score DESC";
+  let rows = query(sql);
+  if (filter) rows = rows.filter(r => r.text.toLowerCase().includes(filter));
+  document.getElementById('facts-count').textContent = `(${rows.length})`;
+  document.getElementById('facts-table').innerHTML = `<table class="data-table">
+    <thead><tr><th style="width:45%">Text</th><th>Category</th><th>Class</th><th>Decay</th><th>Imp.</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col">${truncate(r.text,100)}</td>
+      <td><span class="badge badge-cat">${r.category}</span></td>
+      <td>${classBadge(r.temporal_class)}</td>
+      <td>${decayBar(r.decay_score)}</td>
+      <td style="text-align:center">${r.importance}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('facts','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderDecisions() {
+  const filter = document.getElementById('decisions-filter').value.toLowerCase();
+  let rows = query("SELECT * FROM decisions WHERE is_active=1 ORDER BY decay_score DESC");
+  if (filter) rows = rows.filter(r => r.text.toLowerCase().includes(filter));
+  document.getElementById('decisions-count').textContent = `(${rows.length})`;
+  document.getElementById('decisions-table').innerHTML = `<table class="data-table">
+    <thead><tr><th style="width:55%">Text</th><th>Class</th><th>Decay</th><th>Imp.</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col">${truncate(r.text,120)}</td>
+      <td>${classBadge(r.temporal_class)}</td>
+      <td>${decayBar(r.decay_score)}</td>
+      <td style="text-align:center">${r.importance}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('decisions','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderEntities() {
+  const filter = document.getElementById('entities-filter').value.toLowerCase();
+  let rows = query("SELECT * FROM entities WHERE is_active=1 ORDER BY session_count DESC");
+  if (filter) rows = rows.filter(r => r.name.toLowerCase().includes(filter));
+  document.getElementById('entities-count').textContent = `(${rows.length})`;
+  document.getElementById('entities-table').innerHTML = `<table class="data-table">
+    <thead><tr><th>Name</th><th>Type</th><th>Sessions</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col">${r.name}</td>
+      <td><span class="badge badge-cat">${r.entity_type}</span></td>
+      <td style="text-align:center">${r.session_count}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('entities','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderRelationships() {
+  const filter = document.getElementById('rels-filter').value.toLowerCase();
+  let rows = query("SELECT * FROM relationships WHERE is_active=1 ORDER BY strength DESC");
+  if (filter) rows = rows.filter(r => (r.from_entity+r.to_entity+r.rel_type+r.description).toLowerCase().includes(filter));
+  document.getElementById('relationships-count').textContent = `(${rows.length})`;
+  document.getElementById('relationships-table').innerHTML = `<table class="data-table">
+    <thead><tr><th>From</th><th>Type</th><th>To</th><th>Description</th><th>Str.</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col">${r.from_entity}</td>
+      <td><span class="badge badge-cat">${r.rel_type}</span></td>
+      <td class="text-col">${r.to_entity}</td>
+      <td>${truncate(r.description, 60)}</td>
+      <td style="text-align:center">${r.strength.toFixed(1)}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('relationships','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderGuardrails() {
+  const rows = query("SELECT * FROM guardrails WHERE is_active=1 ORDER BY importance DESC");
+  document.getElementById('guardrails-count').textContent = `(${rows.length})`;
+  document.getElementById('guardrails-table').innerHTML = `<table class="data-table">
+    <thead><tr><th style="width:35%">Warning</th><th>Rationale</th><th>Consequence</th><th>Imp.</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col">${truncate(r.warning, 80)}</td>
+      <td>${truncate(r.rationale, 60)}</td>
+      <td>${truncate(r.consequence, 60)}</td>
+      <td style="text-align:center">${r.importance}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('guardrails','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderProcedures() {
+  const rows = query("SELECT * FROM procedures WHERE is_active=1 ORDER BY importance DESC");
+  document.getElementById('procedures-count').textContent = `(${rows.length})`;
+  document.getElementById('procedures-table').innerHTML = `<table class="data-table">
+    <thead><tr><th style="width:30%">Task</th><th>Steps</th><th>Imp.</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col">${truncate(r.task_description, 60)}</td>
+      <td style="white-space:pre-line;font-size:0.75rem">${truncate(r.steps, 120)}</td>
+      <td style="text-align:center">${r.importance}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('procedures','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderErrors() {
+  const rows = query("SELECT * FROM error_solutions WHERE is_active=1 ORDER BY times_applied DESC");
+  document.getElementById('errors-count').textContent = `(${rows.length})`;
+  document.getElementById('errors-table').innerHTML = `<table class="data-table">
+    <thead><tr><th style="width:35%">Error Pattern</th><th>Solution</th><th>Applied</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td class="text-col" style="font-family:var(--font-mono);font-size:0.75rem">${truncate(r.error_pattern, 70)}</td>
+      <td>${truncate(r.solution, 80)}</td>
+      <td style="text-align:center">${r.times_applied}</td>
+      <td><button class="btn-sm btn-rose" onclick="deleteItem('error_solutions','${r.id}')">&#10005;</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+// ── Search ──────────────────────────────────────────────────────────
+function runSearch() {
+  const q = document.getElementById('search-input').value.trim().toLowerCase();
+  if (!q) return;
+
+  const results = [];
+  const searchTable = (table, textCol, type) => {
+    query(`SELECT * FROM ${table} WHERE is_active=1 AND LOWER(${textCol}) LIKE '%'||?||'%'`, [q])
+      .forEach(r => results.push({ type, text: r[textCol], scope: r.scope, decay: r.decay_score }));
+  };
+
+  searchTable('facts', 'text', 'fact');
+  searchTable('decisions', 'text', 'decision');
+  searchTable('guardrails', 'warning', 'guardrail');
+  searchTable('procedures', 'task_description', 'procedure');
+  searchTable('error_solutions', 'error_pattern', 'error_solution');
+
+  const el = document.getElementById('search-results');
+  if (!results.length) {
+    el.innerHTML = '<div style="color:var(--text-muted);padding:2rem;text-align:center">No results found.</div>';
+    return;
+  }
+
+  el.innerHTML = results.map(r => `<div class="search-result">
+    <div class="sr-type" style="color:${
+      r.type === 'guardrail' ? 'var(--accent-rose)' : r.type === 'fact' ? 'var(--accent-cyan)' :
+      r.type === 'decision' ? 'var(--accent-amber)' : r.type === 'procedure' ? 'var(--accent-emerald)' : 'var(--accent-violet)'
+    }">${r.type}</div>
+    <div class="sr-text">${r.text}</div>
+    <div class="sr-meta">${r.scope}${r.decay !== undefined ? ' &middot; decay: ' + (r.decay||0).toFixed(2) : ''}</div>
+  </div>`).join('');
+}
+
+// ── CRUD ────────────────────────────────────────────────────────────
+function deleteItem(table, id) {
+  db.run(`UPDATE ${table} SET is_active=0 WHERE id=?`, [id]);
+  showToast('Deleted');
+  // Re-render current panel
+  const activePanel = document.querySelector('.panel.active').id.replace('panel-','');
+  showPanel(activePanel);
+}
+
+function openCreateModal(type) {
+  const overlay = document.getElementById('modal-overlay');
+  const title = document.getElementById('modal-title');
+  const body = document.getElementById('modal-body');
+  const saveBtn = document.getElementById('modal-save');
+
+  const forms = {
+    fact: { title: 'Add Fact', fields: `
+      <label>Text</label><textarea id="f-text" placeholder="The system uses..."></textarea>
+      <label>Category</label><select id="f-category">
+        <option>contextual</option><option>architecture</option><option>technical</option>
+        <option>implementation</option><option>operational</option><option>constraint</option>
+        <option>bug_pattern</option><option>decision_rationale</option>
+      </select>
+      <label>Temporal Class</label><select id="f-class"><option>long</option><option>medium</option><option>short</option></select>
+      <label>Importance (1-10)</label><input id="f-imp" type="number" value="5" min="1" max="10">` },
+    decision: { title: 'Add Decision', fields: `
+      <label>Text</label><textarea id="f-text" placeholder="We chose X over Y because..."></textarea>
+      <label>Importance (1-10)</label><input id="f-imp" type="number" value="7" min="1" max="10">` },
+    entity: { title: 'Add Entity', fields: `
+      <label>Name</label><input id="f-name" type="text" placeholder="DuckDB">
+      <label>Type</label><select id="f-type"><option>technology</option><option>person</option><option>project</option><option>hook</option><option>artifact</option><option>general</option></select>` },
+    relationship: { title: 'Add Relationship', fields: `
+      <label>From Entity</label><input id="f-from" type="text" placeholder="ai-memory-db">
+      <label>Relationship Type</label><input id="f-rel" type="text" placeholder="uses">
+      <label>To Entity</label><input id="f-to" type="text" placeholder="DuckDB">
+      <label>Description</label><input id="f-desc" type="text" placeholder="Primary storage backend">
+      <label>Strength (0-1)</label><input id="f-str" type="number" value="0.8" min="0" max="1" step="0.1">` },
+    guardrail: { title: 'Add Guardrail', fields: `
+      <label>Warning</label><textarea id="f-warning" placeholder="Do NOT..."></textarea>
+      <label>Rationale</label><input id="f-rationale" type="text" placeholder="Because...">
+      <label>Consequence</label><input id="f-consequence" type="text" placeholder="If violated...">` },
+    procedure: { title: 'Add Procedure', fields: `
+      <label>Task Description</label><input id="f-task" type="text" placeholder="How to deploy...">
+      <label>Steps</label><textarea id="f-steps" placeholder="1. First step\n2. Second step"></textarea>` },
+    error_solution: { title: 'Add Error Solution', fields: `
+      <label>Error Pattern</label><textarea id="f-pattern" placeholder="ModuleNotFoundError: ..."></textarea>
+      <label>Solution</label><textarea id="f-solution" placeholder="Install the package with..."></textarea>
+      <label>Context</label><input id="f-context" type="text" placeholder="When running hook scripts">` },
+  };
+
+  const form = forms[type];
+  title.textContent = form.title;
+  body.innerHTML = form.fields;
+
+  saveBtn.onclick = () => {
+    try {
+      if (type === 'fact') {
+        db.run("INSERT INTO facts (id,text,category,temporal_class,confidence,decay_score,importance) VALUES (?,?,?,?,?,?,?)",
+          [uid(), document.getElementById('f-text').value, document.getElementById('f-category').value,
+           document.getElementById('f-class').value, 'high', 1.0, parseInt(document.getElementById('f-imp').value)]);
+      } else if (type === 'decision') {
+        db.run("INSERT INTO decisions (id,text,importance) VALUES (?,?,?)",
+          [uid(), document.getElementById('f-text').value, parseInt(document.getElementById('f-imp').value)]);
+      } else if (type === 'entity') {
+        db.run("INSERT INTO entities (id,name,entity_type) VALUES (?,?,?)",
+          [uid(), document.getElementById('f-name').value, document.getElementById('f-type').value]);
+      } else if (type === 'relationship') {
+        db.run("INSERT INTO relationships (id,from_entity,to_entity,rel_type,description,strength) VALUES (?,?,?,?,?,?)",
+          [uid(), document.getElementById('f-from').value, document.getElementById('f-to').value,
+           document.getElementById('f-rel').value, document.getElementById('f-desc').value,
+           parseFloat(document.getElementById('f-str').value)]);
+      } else if (type === 'guardrail') {
+        db.run("INSERT INTO guardrails (id,warning,rationale,consequence) VALUES (?,?,?,?)",
+          [uid(), document.getElementById('f-warning').value, document.getElementById('f-rationale').value,
+           document.getElementById('f-consequence').value]);
+      } else if (type === 'procedure') {
+        db.run("INSERT INTO procedures (id,task_description,steps) VALUES (?,?,?)",
+          [uid(), document.getElementById('f-task').value, document.getElementById('f-steps').value]);
+      } else if (type === 'error_solution') {
+        db.run("INSERT INTO error_solutions (id,error_pattern,solution,error_context) VALUES (?,?,?,?)",
+          [uid(), document.getElementById('f-pattern').value, document.getElementById('f-solution').value,
+           document.getElementById('f-context').value]);
+      }
+      showToast('Created');
+      closeModal();
+      const panelMap = { fact: 'facts', decision: 'decisions', entity: 'entities',
+        relationship: 'relationships', guardrail: 'guardrails', procedure: 'procedures',
+        error_solution: 'errors' };
+      showPanel(panelMap[type]);
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    }
+  };
+
+  overlay.classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Init ────────────────────────────────────────────────────────────
+initDB().then(() => {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  renderOverview();
+});
+</script>
+</body>
+</html>

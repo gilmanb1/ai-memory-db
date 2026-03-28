@@ -8,7 +8,8 @@ RUN npm ci --production=false
 COPY dashboard/frontend/ ./
 # Configure for static export with trailing slash (generates dir/index.html)
 RUN echo 'export default { output: "export", images: { unoptimized: true }, trailingSlash: true }' > next.config.ts
-ENV NEXT_PUBLIC_API_URL=""
+# Override .env.local: set API URL to __SAME_ORIGIN__ sentinel, resolved at runtime
+RUN echo 'NEXT_PUBLIC_API_URL=__SAME_ORIGIN__' > .env.local
 RUN npm run build
 
 # Stage 2: Python backend + demo data

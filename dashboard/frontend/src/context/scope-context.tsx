@@ -28,7 +28,8 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
 
   // Fetch scopes on mount
   useEffect(() => {
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9111";
+    const _raw = process.env.NEXT_PUBLIC_API_URL;
+    const API_BASE = (!_raw || _raw === "__SAME_ORIGIN__") ? "" : _raw;
     fetch(`${API_BASE}/api/v1/scopes`)
       .then((r) => r.json())
       .then((data) => setScopes(data.items || []))

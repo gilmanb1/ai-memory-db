@@ -43,7 +43,7 @@ export default function ReviewPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ status: filter, limit: "100" });
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:9111"}/api/v1/review?${params}`);
+      const res = await fetch(`${(() => { const u = process.env.NEXT_PUBLIC_API_URL; return (!u || u === "__SAME_ORIGIN__") ? "" : u; })()}/api/v1/review?${params}`);
       const data = await res.json();
       setItems(data.items || []);
       setTotal(data.total || 0);
@@ -61,7 +61,7 @@ export default function ReviewPage() {
   async function handleAction(id: string, action: "approve" | "reject") {
     setActionLoading(id);
     try {
-      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:9111"}/api/v1/review/${id}/${action}`;
+      const url = `${(() => { const u = process.env.NEXT_PUBLIC_API_URL; return (!u || u === "__SAME_ORIGIN__") ? "" : u; })()}/api/v1/review/${id}/${action}`;
       await fetch(url, { method: "POST" });
       await fetchItems();
     } finally {

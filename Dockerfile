@@ -6,8 +6,8 @@ WORKDIR /app/dashboard/frontend
 COPY dashboard/frontend/package.json dashboard/frontend/package-lock.json ./
 RUN npm ci --production=false
 COPY dashboard/frontend/ ./
-# Configure for static export
-RUN echo 'export default { output: "export", images: { unoptimized: true } }' > next.config.ts
+# Configure for static export with trailing slash (generates dir/index.html)
+RUN echo 'export default { output: "export", images: { unoptimized: true }, trailingSlash: true }' > next.config.ts
 ENV NEXT_PUBLIC_API_URL=""
 RUN npm run build
 
@@ -19,13 +19,15 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps
-RUN pip install --no-cache-dir fastapi uvicorn duckdb numpy
+RUN pip install --no-cache-dir fastapi uvicorn duckdb numpy anthropic
 
 # Copy project
 COPY memory/ ./memory/
 COPY dashboard/backend/ ./dashboard/backend/
 COPY demo/ ./demo/
 COPY test_corpus.py ./
+COPY test_corpus_scaled.py ./
+COPY test_embeddings_cache.py ./
 COPY test_memory.py ./
 
 # Copy built frontend

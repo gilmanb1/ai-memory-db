@@ -24,6 +24,7 @@ import memory.config as _cfg
 _cfg.DB_PATH = DEMO_DB
 
 # Import and configure the FastAPI app
+# Remove the existing static mount from server.py before importing
 from dashboard.backend.server import app
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -37,10 +38,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Remove any existing static mounts (server.py may have mounted one)
+app.routes[:] = [r for r in app.routes if not (hasattr(r, 'name') and r.name == 'static')]
+
 # Serve frontend static files if built
 static_dir = PROJECT_ROOT / "dashboard" / "frontend" / "out"
 if static_dir.exists():
-    # Mount at root — must be last
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="demo-static")
 
 if __name__ == "__main__":

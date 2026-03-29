@@ -4,901 +4,705 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ai-memory-db — Persistent Memory for Claude Code</title>
-<meta name="description" content="Give Claude Code a brain that remembers. Extract facts, decisions, and relationships from conversations. Inject relevant context into every future session.">
+<meta name="description" content="Claude Code forgets everything between sessions. ai-memory-db fixes that. Automatic knowledge extraction, 6-way retrieval, local-first.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg-deep: #080b11;
-  --bg-surface: #0d1117;
-  --bg-card: #111820;
-  --bg-card-hover: #161e28;
-  --border: #1e2a3a;
-  --border-bright: #2a3a4e;
-  --text-primary: #e2e8f0;
-  --text-secondary: #8494a7;
-  --text-muted: #4a5568;
-  --accent-cyan: #22d3ee;
-  --accent-amber: #f59e0b;
-  --accent-emerald: #34d399;
-  --accent-rose: #fb7185;
-  --accent-violet: #a78bfa;
-  --glow-cyan: rgba(34, 211, 238, 0.15);
-  --glow-amber: rgba(245, 158, 11, 0.12);
-  --font-display: 'Instrument Serif', Georgia, serif;
-  --font-body: 'Outfit', -apple-system, sans-serif;
-  --font-mono: 'DM Mono', 'SF Mono', monospace;
+  --bg: #FEFBF6;
+  --bg-warm: #FBF7F0;
+  --bg-muted: #F5F0E8;
+  --bg-code: #2C2520;
+  --border: #E8E0D4;
+  --border-strong: #D4C9B9;
+  --text: #292524;
+  --text-secondary: #6B6560;
+  --text-muted: #A39E98;
+  --accent: #C2410C;
+  --accent-hover: #A3360A;
+  --sage: #4D7C6F;
+  --sage-light: #E8F0ED;
+  --violet: #6D5ACE;
+  --violet-light: #EEEBFA;
+  --amber: #B45309;
+  --amber-light: #FEF3C7;
+  --rose: #BE123C;
+  --rose-light: #FFF1F2;
+  --font-display: 'Roboto', -apple-system, sans-serif;
+  --font-body: 'Roboto', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 }
 
 html { scroll-behavior: smooth; }
 
 body {
-  background: var(--bg-deep);
-  color: var(--text-primary);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-body);
-  line-height: 1.6;
-  overflow-x: hidden;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Grain overlay ──────────────────────────────────── */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 9999;
-}
+::selection { background: rgba(194, 65, 12, 0.12); }
 
-/* ── Navigation ─────────────────────────────────────── */
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+/* ── Nav ──────────────────────────────────────────── */
 nav {
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 100;
-  padding: 1rem 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(8, 11, 17, 0.8);
+  padding: 0.75rem 2.5rem;
+  background: rgba(254, 251, 246, 0.85);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 
-nav .logo {
+.logo {
   font-family: var(--font-mono);
+  font-size: 0.82rem;
   font-weight: 500;
-  font-size: 0.85rem;
-  color: var(--accent-cyan);
-  letter-spacing: 0.02em;
-}
-
-nav .logo span { color: var(--text-muted); }
-
-nav .nav-links {
-  display: flex;
-  gap: 2rem;
-  align-items: center;
-}
-
-nav .nav-links a {
-  color: var(--text-secondary);
+  color: var(--text);
   text-decoration: none;
+}
+
+.logo span { color: var(--text-muted); font-weight: 400; }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.nav-links a {
+  color: var(--text-secondary);
   font-size: 0.85rem;
   font-weight: 400;
-  transition: color 0.2s;
+  transition: color 0.15s;
 }
 
-nav .nav-links a:hover { color: var(--text-primary); }
+.nav-links a:hover { color: var(--text); }
 
-.btn-primary {
+.btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1.25rem;
-  background: var(--accent-cyan);
-  color: var(--bg-deep);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
+  gap: 0.45rem;
+  padding: 0.5rem 1.1rem;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
   font-weight: 500;
-  text-decoration: none;
-  border-radius: 6px;
+  border-radius: 7px;
   border: none;
   cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover {
-  background: #06b6d4;
-  box-shadow: 0 0 20px var(--glow-cyan);
-}
-
-.btn-outline {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1.25rem;
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  font-weight: 400;
+  transition: all 0.15s;
   text-decoration: none;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.btn-outline:hover {
-  border-color: var(--border-bright);
-  color: var(--text-primary);
-}
+.btn-primary { background: var(--text); color: var(--bg); }
+.btn-primary:hover { background: #1C1917; color: var(--bg); }
+.btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--border-strong); color: var(--text); background: var(--bg-warm); }
+.btn-accent { background: var(--accent); color: white; }
+.btn-accent:hover { background: var(--accent-hover); color: white; }
 
-/* ── Hero ───────────────────────────────────────────── */
+/* ── Hero ─────────────────────────────────────────── */
 .hero {
-  position: relative;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 8rem 2rem 6rem;
-  text-align: center;
-  overflow: hidden;
+  padding: 7rem 2.5rem 5rem;
+  max-width: 820px;
+  margin: 0 auto;
 }
 
-.hero-bg {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 20%, rgba(34, 211, 238, 0.06), transparent),
-    radial-gradient(ellipse 60% 40% at 70% 80%, rgba(245, 158, 11, 0.04), transparent),
-    radial-gradient(ellipse 50% 50% at 20% 60%, rgba(167, 139, 250, 0.03), transparent);
-}
-
-/* Animated grid */
-.hero-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 60px 60px;
-  opacity: 0.3;
-  mask-image: radial-gradient(ellipse 70% 50% at 50% 50%, black 20%, transparent 70%);
-  animation: gridPulse 8s ease-in-out infinite;
-}
-
-@keyframes gridPulse {
-  0%, 100% { opacity: 0.2; }
-  50% { opacity: 0.35; }
-}
-
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.9rem;
-  background: rgba(34, 211, 238, 0.08);
-  border: 1px solid rgba(34, 211, 238, 0.2);
-  border-radius: 100px;
+.hero-eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--accent-cyan);
-  margin-bottom: 2rem;
-  animation: fadeUp 0.6s ease-out both;
-}
-
-.hero-badge .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-emerald);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 1.25rem;
+  animation: fadeUp 0.5s ease both;
 }
 
 .hero h1 {
   font-family: var(--font-display);
-  font-size: clamp(3rem, 7vw, 5.5rem);
-  font-weight: 400;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  max-width: 800px;
-  position: relative;
-  animation: fadeUp 0.6s ease-out 0.1s both;
+  font-size: clamp(2.5rem, 5.5vw, 3.8rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  margin-bottom: 1.5rem;
+  animation: fadeUp 0.5s ease 0.05s both;
 }
 
 .hero h1 em {
-  font-style: italic;
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-violet));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-style: normal;
+  font-weight: 300;
+  color: var(--accent);
 }
 
 .hero-sub {
   font-size: 1.15rem;
   color: var(--text-secondary);
-  max-width: 560px;
-  margin-top: 1.5rem;
+  max-width: 580px;
   font-weight: 300;
-  line-height: 1.7;
-  animation: fadeUp 0.6s ease-out 0.2s both;
+  line-height: 1.75;
+  margin-bottom: 2rem;
+  animation: fadeUp 0.5s ease 0.1s both;
 }
 
 .hero-actions {
   display: flex;
-  gap: 1rem;
-  margin-top: 2.5rem;
-  animation: fadeUp 0.6s ease-out 0.3s both;
-}
-
-.hero-install {
-  margin-top: 3rem;
-  animation: fadeUp 0.6s ease-out 0.4s both;
+  gap: 0.75rem;
+  margin-bottom: 2.5rem;
+  animation: fadeUp 0.5s ease 0.15s both;
 }
 
 .install-block {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.75rem 1.5rem;
+  background: var(--bg-code);
+  border-radius: 9px;
+  padding: 0.8rem 1.25rem;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+  font-size: 0.78rem;
+  color: #D6D3D1;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
+  transition: all 0.15s;
+  animation: fadeUp 0.5s ease 0.2s both;
 }
 
-.install-block:hover {
-  border-color: var(--border-bright);
-  background: var(--bg-card-hover);
-}
-
-.install-block .prompt { color: var(--accent-amber); }
-.install-block code { color: var(--text-primary); user-select: all; }
-.install-block .copy-hint {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  border-left: 1px solid var(--border);
-  padding-left: 0.75rem;
-}
+.install-block:hover { background: #1C1917; }
+.install-block .prompt { color: var(--accent); }
+.install-block code { color: #FAFAF9; user-select: all; }
+.install-block .copy-hint { font-size: 0.65rem; color: #78716C; margin-left: auto; }
 
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Stats bar ──────────────────────────────────────── */
-.stats-bar {
-  display: flex;
-  justify-content: center;
-  gap: 3rem;
-  padding: 2rem;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
-}
-
-.stat {
-  text-align: center;
-}
-
-.stat-value {
-  font-family: var(--font-mono);
-  font-size: 1.5rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.stat-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-top: 0.25rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-/* ── Section layout ─────────────────────────────────── */
+/* ── Sections ─────────────────────────────────────── */
 section {
-  padding: 6rem 2rem;
-  max-width: 1100px;
+  padding: 5rem 2.5rem;
+  max-width: 1060px;
   margin: 0 auto;
 }
 
-.section-label {
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0 2.5rem;
+  max-width: 1060px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.section-eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--accent-cyan);
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
 .section-title {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 400;
+  font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+  font-weight: 600;
   line-height: 1.15;
-  margin-bottom: 1rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
 }
 
 .section-desc {
   color: var(--text-secondary);
-  max-width: 600px;
+  max-width: 540px;
   font-weight: 300;
-  line-height: 1.7;
-  margin-bottom: 3rem;
+  line-height: 1.75;
+  margin-bottom: 2.5rem;
+  font-size: 1rem;
 }
 
-/* ── How It Works ───────────────────────────────────── */
-.flow-steps {
+/* ── How it works steps ──────────────────────────── */
+.steps-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border-radius: 12px;
-  overflow: hidden;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
 }
 
-.flow-step {
-  background: var(--bg-card);
-  padding: 2rem 1.5rem;
+.step {
   position: relative;
-  transition: background 0.3s;
 }
 
-.flow-step:hover { background: var(--bg-card-hover); }
-
-.flow-step-num {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  margin-bottom: 1rem;
+.step-num {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 300;
+  color: var(--border-strong);
+  line-height: 1;
+  margin-bottom: 0.75rem;
 }
 
-.flow-step-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.1rem;
-  margin-bottom: 1rem;
-}
-
-.flow-step h3 {
-  font-family: var(--font-body);
-  font-size: 0.95rem;
+.step h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
 }
 
-.flow-step p {
-  font-size: 0.82rem;
+.step p {
+  font-size: 0.88rem;
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: 1.65;
   font-weight: 300;
 }
 
-/* ── Feature cards ──────────────────────────────────── */
-.features-grid {
+/* ── Extraction example ──────────────────────────── */
+.extraction-pair {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border-radius: 12px;
-  overflow: hidden;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-top: 2rem;
 }
 
-.feature-card {
-  background: var(--bg-card);
-  padding: 2rem;
-  transition: background 0.3s;
-}
-
-.feature-card:hover { background: var(--bg-card-hover); }
-
-.feature-icon {
-  font-size: 1.3rem;
-  margin-bottom: 1rem;
-}
-
-.feature-card h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.feature-card p {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  font-weight: 300;
-}
-
-/* ── Retrieval pipeline ─────────────────────────────── */
-.pipeline-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-}
-
-.pipeline-item {
-  background: var(--bg-card);
+.ex-panel {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 1.5rem;
-  transition: all 0.3s;
+  overflow: hidden;
 }
 
-.pipeline-item:hover {
-  border-color: var(--border-bright);
-  transform: translateY(-2px);
-}
-
-.pipeline-name {
+.ex-panel-header {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ex-panel-header.input-h { color: var(--text-secondary); background: var(--bg-warm); }
+.ex-panel-header.output-h { color: var(--sage); background: var(--sage-light); }
+
+.ex-panel-body { padding: 1.25rem; }
+
+.conv-turn {
+  margin-bottom: 1rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border);
+}
+
+.conv-turn:last-child { margin-bottom: 0; }
+
+.conv-role {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.15rem;
+}
+
+.conv-role.u { color: var(--accent); }
+.conv-role.a { color: var(--violet); }
+
+.conv-text {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.ex-item {
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.6rem;
+  border-left: 3px solid;
+  border-radius: 0 6px 6px 0;
+  background: var(--bg-warm);
+}
+
+.ex-item:last-child { margin-bottom: 0; }
+
+.ex-item-type {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.15rem;
+}
+
+.ex-item-text {
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.ex-item.guardrail { border-color: var(--rose); }
+.ex-item.guardrail .ex-item-type { color: var(--rose); }
+.ex-item.fact { border-color: var(--sage); }
+.ex-item.fact .ex-item-type { color: var(--sage); }
+.ex-item.error { border-color: var(--amber); }
+.ex-item.error .ex-item-type { color: var(--amber); }
+.ex-item.relation { border-color: var(--violet); }
+.ex-item.relation .ex-item-type { color: var(--violet); }
+
+.ex-caption {
+  margin-top: 1.25rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 600px;
+}
+
+/* ── Comparison table ────────────────────────────── */
+.compare-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.compare-table th {
+  text-align: left;
+  padding: 0.65rem 1rem;
+  font-weight: 500;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-warm);
+  white-space: nowrap;
+}
+
+.compare-table td {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.compare-table tr:last-child td { border-bottom: none; }
+.compare-table tr:hover td { background: var(--bg-warm); }
+.compare-table td:first-child { color: var(--text); font-weight: 500; white-space: nowrap; }
+.compare-table td:last-child { color: var(--sage); font-weight: 500; }
+
+.cmp-no { color: var(--text-muted); }
+.cmp-partial { color: var(--amber); }
+.cmp-yes { color: var(--sage); }
+
+/* ── Feature grid ────────────────────────────────── */
+.feat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.feat-card {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.feat-card:hover { border-color: var(--border-strong); background: var(--bg-warm); }
+
+.feat-card h3 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
   margin-bottom: 0.35rem;
 }
 
-.pipeline-desc {
-  font-size: 0.78rem;
+.feat-card p {
+  font-size: 0.84rem;
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.6;
   font-weight: 300;
 }
 
-.pipeline-speed {
+.feat-tag {
+  display: inline-block;
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  margin-top: 0.75rem;
+  font-size: 0.6rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  margin-bottom: 0.6rem;
+  font-weight: 500;
 }
 
-/* ── Code block ─────────────────────────────────────── */
-.code-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3rem;
-  align-items: start;
-}
+.feat-tag.retrieval { background: var(--sage-light); color: var(--sage); }
+.feat-tag.extract { background: var(--amber-light); color: var(--amber); }
+.feat-tag.safety { background: var(--rose-light); color: var(--rose); }
+.feat-tag.viz { background: var(--violet-light); color: var(--violet); }
 
+/* ── Code block ──────────────────────────────────── */
 .code-block {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--bg-code);
   border-radius: 10px;
   overflow: hidden;
+  max-width: 600px;
 }
 
 .code-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--text-muted);
+  gap: 6px;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-.code-header .dots {
-  display: flex;
-  gap: 5px;
-}
+.code-header .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.12); }
 
-.code-header .dots span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-bright);
-}
+.code-header span { font-family: var(--font-mono); font-size: 0.65rem; color: #78716C; margin-left: 0.5rem; }
 
-.code-content {
-  padding: 1.25rem;
+.code-body {
+  padding: 1rem 1.25rem;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  line-height: 1.8;
-  overflow-x: auto;
+  line-height: 1.85;
+  color: #D6D3D1;
 }
 
-.code-content .comment { color: var(--text-muted); }
-.code-content .command { color: var(--accent-cyan); }
-.code-content .string { color: var(--accent-emerald); }
-.code-content .keyword { color: var(--accent-violet); }
-.code-content .flag { color: var(--accent-amber); }
+.code-body .cm { color: #78716C; }
+.code-body .kw { color: #FB923C; }
+.code-body .st { color: #86EFAC; }
+.code-body .fl { color: #93C5FD; }
 
-/* ── Footer ─────────────────────────────────────────── */
+/* ── Install section ─────────────────────────────── */
+.install-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+/* ── Footer ──────────────────────────────────────── */
 footer {
-  padding: 3rem 2rem;
+  padding: 2.5rem 2.5rem;
   border-top: 1px solid var(--border);
   text-align: center;
-}
-
-footer p {
   font-size: 0.78rem;
   color: var(--text-muted);
 }
 
-footer a {
-  color: var(--text-secondary);
-  text-decoration: none;
-}
+footer a { color: var(--text-secondary); }
+footer a:hover { color: var(--accent); }
 
-footer a:hover { color: var(--accent-cyan); }
-
-/* ── Architecture diagram ───────────────────────────── */
-.arch-diagram {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 2.5rem;
+/* ── Architecture diagram ────────────────────────── */
+.arch-box {
+  background: var(--bg-code);
+  border-radius: 10px;
+  padding: 2rem;
   overflow-x: auto;
-  position: relative;
 }
 
-.arch-diagram pre {
+.arch-box pre {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
-  line-height: 1.65;
-  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.6;
+  color: #D6D3D1;
   white-space: pre;
   margin: 0;
 }
 
-.arch-diagram .layer-label {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 3px;
-  margin-bottom: 0.5rem;
+.arch-box .ac { color: #22d3ee; }
+.arch-box .ae { color: #34d399; }
+.arch-box .aa { color: #fbbf24; }
+.arch-box .av { color: #a78bfa; }
+.arch-box .aw { color: #FAFAF9; font-weight: 500; }
+.arch-box .am { color: #78716C; }
+
+/* ── Pass timeline ───────────────────────────────── */
+.pass-list {
+  margin-top: 2.5rem;
 }
 
-.arch-pass {
+.pass-item {
   display: grid;
-  grid-template-columns: 60px 1fr;
+  grid-template-columns: 48px 1fr;
   gap: 0;
-  margin-top: 2rem;
+  margin-bottom: 0;
 }
 
-.arch-pass-line {
-  position: relative;
+.pass-line {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.arch-pass-dot {
-  width: 12px;
-  height: 12px;
+.pass-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   border: 2px solid;
-  background: var(--bg-card);
-  z-index: 2;
+  background: var(--bg);
   flex-shrink: 0;
+  z-index: 2;
 }
 
-.arch-pass-connector {
-  width: 2px;
+.pass-connector {
+  width: 1px;
   flex: 1;
   background: var(--border);
 }
 
-.arch-pass-content {
-  padding: 0 0 2rem 1rem;
-  border-left: none;
+.pass-body {
+  padding: 0 0 1.75rem 0.75rem;
 }
 
-.arch-pass-trigger {
+.pass-trigger {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 500;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
 }
 
-.arch-pass-desc {
-  font-size: 0.8rem;
+.pass-desc {
+  font-size: 0.84rem;
   color: var(--text-secondary);
   line-height: 1.6;
   font-weight: 300;
 }
 
-.arch-pass-badge {
+.pass-badge {
   display: inline-block;
   font-family: var(--font-mono);
   font-size: 0.6rem;
+  font-weight: 500;
   padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  margin-top: 0.4rem;
+  border-radius: 4px;
+  margin-top: 0.35rem;
 }
 
-/* ── Comparison table ──────────────────────────────── */
-.compare-table {
+/* ── API/MCP tables ──────────────────────────────── */
+.api-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
-  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
 }
 
-.compare-table th {
+.api-table th {
   text-align: left;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 1rem;
   font-weight: 500;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-warm);
+}
+
+.api-table td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.api-table tr:last-child td { border-bottom: none; }
+.api-table tr:hover td { background: var(--bg-warm); }
+
+.api-method {
+  font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
+  font-weight: 500;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
 }
 
-.compare-table th:first-child { width: 180px; }
+.api-method.get { background: var(--sage-light); color: var(--sage); }
+.api-method.post { background: var(--amber-light); color: var(--amber); }
+.api-method.put { background: var(--violet-light); color: var(--violet); }
+.api-method.del { background: var(--rose-light); color: var(--rose); }
 
-.compare-table td {
-  padding: 0.65rem 1rem;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-secondary);
-  vertical-align: top;
-}
-
-.compare-table tr:last-child td { border-bottom: none; }
-.compare-table tr:hover td { background: var(--bg-card-hover); }
-.compare-table td:first-child { color: var(--text-primary); font-weight: 500; }
-
-.compare-table .yes { color: var(--accent-emerald); }
-.compare-table .no { color: var(--text-muted); }
-.compare-table .partial { color: var(--accent-amber); }
-.compare-table .highlight { color: var(--accent-cyan); font-weight: 500; }
-
-/* ── Extraction example ──────────────────────────── */
-.extraction-demo {
-  display: grid;
-  grid-template-columns: 1fr 40px 1fr;
-  gap: 0;
-  align-items: start;
-  margin-top: 2rem;
-}
-
-.extraction-demo .arrow-col {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-top: 3rem;
-  color: var(--accent-cyan);
-  font-size: 1.2rem;
-}
-
-.extraction-box {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.extraction-box-header {
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.extraction-box-body {
-  padding: 1rem;
-  font-size: 0.82rem;
-  line-height: 1.7;
-}
-
-.extraction-box-body .conv-line {
-  margin-bottom: 0.75rem;
-  padding-left: 0.75rem;
-  border-left: 2px solid var(--border);
-}
-
-.extraction-box-body .conv-role {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.15rem;
-}
-
-.extraction-box-body .conv-role.user { color: var(--accent-cyan); }
-.extraction-box-body .conv-role.assistant { color: var(--accent-violet); }
-
-.extracted-item {
-  padding: 0.5rem 0.75rem;
-  border-left: 3px solid;
-  margin-bottom: 0.5rem;
-  font-size: 0.8rem;
-  background: rgba(255,255,255,0.02);
-  border-radius: 0 4px 4px 0;
-}
-
-.extracted-item .extracted-type {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.15rem;
-}
-
-.extracted-item .extracted-text {
-  color: var(--text-primary);
-  line-height: 1.5;
-}
-
-/* ── Dashboard showcase ────────────────────────────── */
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-.dashboard-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.75rem;
-  transition: all 0.3s;
-}
-
-.dashboard-card:hover {
-  border-color: var(--border-bright);
-  transform: translateY(-2px);
-}
-
-.dashboard-card.wide {
-  grid-column: 1 / -1;
-}
-
-.dashboard-card-icon {
-  font-size: 1.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.dashboard-card h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.4rem;
-}
-
-.dashboard-card p {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  font-weight: 300;
-}
-
-.dashboard-card ul {
-  margin-top: 0.5rem;
-  padding-left: 1rem;
-  list-style: none;
-}
-
-.dashboard-card ul li {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  line-height: 1.7;
-  font-weight: 300;
-  position: relative;
-  padding-left: 0.75rem;
-}
-
-.dashboard-card ul li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.55em;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
-.dashboard-start {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px;
-  background: var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  margin-top: 2rem;
-}
-
-.dashboard-start-step {
-  background: var(--bg-card);
-  padding: 1.25rem 1.5rem;
-}
-
-.dashboard-start-step .step-num {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  margin-bottom: 0.35rem;
-}
-
-.dashboard-start-step code {
+.api-path {
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--accent-cyan);
-  display: block;
-  margin-top: 0.25rem;
+  color: var(--text);
 }
 
-.dashboard-start-step p {
+.api-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.api-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.api-group-header {
+  padding: 0.6rem 1rem;
+  font-weight: 500;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-warm);
+}
+
+.api-group-body {
+  padding: 0.5rem 0;
+}
+
+.api-group-item {
+  padding: 0.35rem 1rem;
   font-size: 0.8rem;
-  color: var(--text-secondary);
-  font-weight: 300;
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
 }
 
-/* ── Responsive ─────────────────────────────────────── */
+.api-group-item .api-path { font-size: 0.72rem; }
+
+/* ── Responsive ──────────────────────────────────── */
 @media (max-width: 768px) {
-  .flow-steps { grid-template-columns: 1fr 1fr; }
-  .features-grid { grid-template-columns: 1fr; }
-  .pipeline-grid { grid-template-columns: 1fr; }
-  .code-section { grid-template-columns: 1fr; }
-  .dashboard-grid { grid-template-columns: 1fr; }
-  .dashboard-start { grid-template-columns: 1fr; }
-  .stats-bar { flex-wrap: wrap; gap: 1.5rem; }
-  nav .nav-links { gap: 1rem; }
-  .hero-actions { flex-direction: column; align-items: center; }
-  .arch-diagram { padding: 1.5rem; }
-  .arch-diagram pre { font-size: 0.55rem; }
+  nav { padding: 0.75rem 1.25rem; }
+  .nav-links a:not(.btn) { display: none; }
+  .hero, section { padding-left: 1.25rem; padding-right: 1.25rem; }
+  .steps-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+  .feat-grid { grid-template-columns: 1fr; }
+  .extraction-pair { grid-template-columns: 1fr; }
+  .install-grid { grid-template-columns: 1fr; }
   .compare-table { font-size: 0.72rem; }
-  .extraction-demo { grid-template-columns: 1fr; }
-  .extraction-demo .arrow-col { transform: rotate(90deg); padding: 1rem 0; }
-}
-
-@media (max-width: 480px) {
-  .flow-steps { grid-template-columns: 1fr; }
-  nav .nav-links a:not(.btn-primary) { display: none; }
+  .hero-actions { flex-wrap: wrap; }
+  .arch-box { padding: 1rem; }
+  .arch-box pre { font-size: 0.52rem; }
+  .api-groups { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
 
-<!-- Navigation -->
 <nav>
-  <div class="logo">ai-memory-db <span>v1.0.0</span></div>
+  <a href="/" class="logo">ai-memory-db <span>v1.0</span></a>
   <div class="nav-links">
     <a href="#how-it-works">How It Works</a>
+    <a href="#extraction">Extraction</a>
     <a href="#architecture">Architecture</a>
     <a href="#features">Features</a>
-    <a href="#dashboard">Dashboard</a>
-    <a href="mcp-tools.html">MCP Tools</a>
-    <a href="rest-api.html">REST API</a>
-    <a href="https://ai-memory-db.onrender.com" class="btn-primary" style="background: var(--accent-amber); margin-right: 0.5rem;">
-      Live Demo
-    </a>
-    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-primary">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    <a href="demo.html" class="btn btn-ghost">Live Demo</a>
+    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn btn-primary">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
       GitHub
     </a>
   </div>
@@ -906,661 +710,468 @@ footer a:hover { color: var(--accent-cyan); }
 
 <!-- Hero -->
 <div class="hero">
-  <div class="hero-bg"></div>
-  <div class="hero-grid"></div>
-
-  <div class="hero-badge">
-    <span class="dot"></span>
-    Open Source &middot; Local-First &middot; 819 Tests
-  </div>
-
-  <h1>Give Claude Code<br>a <em>memory</em></h1>
-
+  <div class="hero-eyebrow">Open Source &middot; Local-First &middot; 819 Tests</div>
+  <h1>Claude Code forgets everything.<br><em>This fixes that.</em></h1>
   <p class="hero-sub">
-    Automatically extract knowledge from every conversation.
-    Inject relevant context into every future session.
-    Your facts, decisions, and guardrails persist — across projects, across time.
+    Hooks extract facts, decisions, and guardrails from every conversation.
+    Six retrieval strategies inject relevant context back into every future prompt.
+    Knowledge persists across sessions, across projects, across time.
   </p>
-
   <div class="hero-actions">
-    <a href="demo.html" class="btn-primary" style="background: var(--accent-amber); font-size: 0.85rem; padding: 0.6rem 1.5rem;">
-      &#9654; Try Live Demo
-    </a>
-    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-outline">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-      GitHub
-    </a>
-    <a href="#install" class="btn-outline">Install</a>
+    <a href="demo.html" class="btn btn-accent">Try the live demo</a>
+    <a href="https://github.com/gilmanb1/ai-memory-db" class="btn btn-ghost">View source</a>
+    <a href="#install" class="btn btn-ghost">Install</a>
   </div>
-
-  <div class="hero-install">
-    <div class="install-block" onclick="navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash')">
-      <span class="prompt">$</span>
-      <code>curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash</code>
-      <span class="copy-hint">click to copy</span>
-    </div>
+  <div class="install-block" onclick="navigator.clipboard.writeText('curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash').then(()=>{this.querySelector('.copy-hint').textContent='Copied!';setTimeout(()=>this.querySelector('.copy-hint').textContent='click to copy',2000)})">
+    <span class="prompt">$</span>
+    <code>curl -fsSL .../install-remote.sh | bash</code>
+    <span class="copy-hint">click to copy</span>
   </div>
 </div>
 
-<!-- Stats bar -->
-<div class="stats-bar">
-  <div class="stat">
-    <div class="stat-value">6</div>
-    <div class="stat-label">Retrieval Strategies</div>
-  </div>
-  <div class="stat">
-    <div class="stat-value">22</div>
-    <div class="stat-label">Slash Commands</div>
-  </div>
-  <div class="stat">
-    <div class="stat-value">819</div>
-    <div class="stat-label">Tests</div>
-  </div>
-  <div class="stat">
-    <div class="stat-value">8</div>
-    <div class="stat-label">Knowledge Types</div>
-  </div>
-  <div class="stat">
-    <div class="stat-value">5</div>
-    <div class="stat-label">Languages Parsed</div>
-  </div>
-</div>
-
-<!-- The Problem -->
-<section id="why" style="border-bottom: 1px solid var(--border); padding-bottom: 5rem;">
-  <div class="section-label">The Problem</div>
-  <h2 class="section-title">Claude Code forgets<br>everything. Every time.</h2>
-  <p class="section-desc" style="max-width: 700px;">
-    You explain your architecture. Your constraints. Your deployment process. Your naming conventions.
-    Then the session ends — and it's all gone. Next session, you start from scratch.
-    CLAUDE.md files help, but they're manual, static, and can't capture the nuance of a 2-hour debugging session.
-  </p>
-  <p style="font-size: 0.95rem; color: var(--text-primary); max-width: 700px; line-height: 1.7; margin-bottom: 2rem;">
-    <strong>ai-memory-db fixes this.</strong> It hooks into every Claude Code session, automatically extracts what matters, and injects relevant context back — silently, every prompt, forever. Your AI accumulates institutional knowledge the same way you do.
-  </p>
-
-  <!-- Comparison table -->
-  <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 1rem; margin-top: 3rem;">How it compares</h3>
-  <table class="compare-table">
-    <thead>
-      <tr>
-        <th>Capability</th>
-        <th>CLAUDE.md</th>
-        <th>Cursor Memory</th>
-        <th>Windsurf Memories</th>
-        <th class="highlight">ai-memory-db</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Automatic extraction</td>
-        <td class="no">Manual only</td>
-        <td class="partial">Partial</td>
-        <td class="yes">Yes</td>
-        <td class="highlight">Yes — 3 passes/session</td>
-      </tr>
-      <tr>
-        <td>Knowledge types</td>
-        <td class="no">Free text</td>
-        <td class="partial">Key-value</td>
-        <td class="partial">Rules + memories</td>
-        <td class="highlight">8 types with priorities</td>
-      </tr>
-      <tr>
-        <td>Semantic search</td>
-        <td class="no">No</td>
-        <td class="partial">Basic</td>
-        <td class="no">No</td>
-        <td class="highlight">6-way parallel + RRF</td>
-      </tr>
-      <tr>
-        <td>Temporal decay</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="highlight">3-class exponential</td>
-      </tr>
-      <tr>
-        <td>Project isolation</td>
-        <td class="partial">Per-repo file</td>
-        <td class="no">Global</td>
-        <td class="partial">Per-workspace</td>
-        <td class="highlight">Per-repo + auto-promote</td>
-      </tr>
-      <tr>
-        <td>Entity/relationship graph</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="highlight">2-hop BFS traversal</td>
-      </tr>
-      <tr>
-        <td>Code graph (AST)</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="highlight">5 languages via tree-sitter</td>
-      </tr>
-      <tr>
-        <td>Guardrails</td>
-        <td class="partial">Manual rules</td>
-        <td class="no">No</td>
-        <td class="partial">Manual rules</td>
-        <td class="highlight">Auto-enforce + git stash</td>
-      </tr>
-      <tr>
-        <td>Data location</td>
-        <td class="yes">Local file</td>
-        <td class="no">Cloud</td>
-        <td class="yes">Local</td>
-        <td class="highlight">100% local (DuckDB)</td>
-      </tr>
-      <tr>
-        <td>Web dashboard</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="no">No</td>
-        <td class="highlight">Full CRUD + graph viz</td>
-      </tr>
-    </tbody>
-  </table>
-</section>
-
-<!-- Extraction Example -->
-<section id="extraction-example">
-  <div class="section-label">See It In Action</div>
-  <h2 class="section-title">What gets extracted<br>from a real conversation</h2>
-  <p class="section-desc">
-    Here's what happens when the extraction pipeline processes a typical debugging session. The left side is the conversation — the right is what the system stores.
-  </p>
-
-  <div class="extraction-demo">
-    <div class="extraction-box">
-      <div class="extraction-box-header">Conversation (session #14)</div>
-      <div class="extraction-box-body">
-        <div class="conv-line">
-          <div class="conv-role user">User</div>
-          <div style="color: var(--text-secondary);">The deploy is failing on staging. It's timing out on the health check after the ECS task starts.</div>
-        </div>
-        <div class="conv-line">
-          <div class="conv-role assistant">Assistant</div>
-          <div style="color: var(--text-secondary);">Looking at the ECS task definition... The health check path is /api/health but the app starts on port 8000, not 80. The ALB target group is configured for port 80.</div>
-        </div>
-        <div class="conv-line">
-          <div class="conv-role user">User</div>
-          <div style="color: var(--text-secondary);">Right, we changed the port last week when we added the gRPC listener. The Terraform in ops/terraform/staging/ecs.tf still has the old port.</div>
-        </div>
-        <div class="conv-line">
-          <div class="conv-role assistant">Assistant</div>
-          <div style="color: var(--text-secondary);">Fixed. Updated the target group port to 8000 and the container port mapping. Also added a health check grace period of 60s since the app takes ~30s to warm up.</div>
-        </div>
-        <div class="conv-line">
-          <div class="conv-role user">User</div>
-          <div style="color: var(--text-secondary);">Good. Also, never change the port without updating both the ECS task def AND the ALB target group — we've been burned by this twice now.</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="arrow-col">&#10132;</div>
-
-    <div class="extraction-box">
-      <div class="extraction-box-header">Extracted Knowledge</div>
-      <div class="extraction-box-body">
-        <div class="extracted-item" style="border-color: var(--accent-rose);">
-          <div class="extracted-type" style="color: var(--accent-rose);">Guardrail (importance: 9)</div>
-          <div class="extracted-text">Never change the container port without updating both the ECS task definition AND the ALB target group. Files: ops/terraform/staging/ecs.tf</div>
-        </div>
-        <div class="extracted-item" style="border-color: var(--accent-cyan);">
-          <div class="extracted-type" style="color: var(--accent-cyan);">Fact (long-term)</div>
-          <div class="extracted-text">Production backend runs on port 8000 (changed from port 80 when gRPC listener was added)</div>
-        </div>
-        <div class="extracted-item" style="border-color: var(--accent-amber);">
-          <div class="extracted-type" style="color: var(--accent-amber);">Fact (medium-term)</div>
-          <div class="extracted-text">App requires ~30s to warm up; health check grace period set to 60s in ECS task definition</div>
-        </div>
-        <div class="extracted-item" style="border-color: var(--accent-violet);">
-          <div class="extracted-type" style="color: var(--accent-violet);">Error Solution</div>
-          <div class="extracted-text">ECS health check timeout on deploy → Check ALB target group port matches container port mapping</div>
-        </div>
-        <div class="extracted-item" style="border-color: var(--accent-emerald);">
-          <div class="extracted-type" style="color: var(--accent-emerald);">Relationship</div>
-          <div class="extracted-text">ecs.tf --[configures]--> ALB target group (port must match container)</div>
-        </div>
-        <div class="extracted-item" style="border-color: var(--accent-emerald);">
-          <div class="extracted-type" style="color: var(--accent-emerald);">Entity</div>
-          <div class="extracted-text">ops/terraform/staging/ecs.tf (artifact) — ECS task + ALB configuration</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 1.5rem; max-width: 700px; line-height: 1.6;">
-    Next session, when the user asks about deployments or edits ecs.tf, the guardrail surfaces automatically. The port fact is injected as context. The error solution is recalled if a similar timeout occurs. The user never has to explain any of this again.
-  </p>
-</section>
+<hr class="section-divider">
 
 <!-- How It Works -->
 <section id="how-it-works">
-  <div class="section-label">How It Works</div>
+  <div class="section-eyebrow">How It Works</div>
   <h2 class="section-title">Fully automatic. Zero config.</h2>
-  <p class="section-desc">
-    Hooks fire at every stage of your Claude Code session. Knowledge is extracted in the background, stored locally, and recalled when relevant.
-  </p>
+  <p class="section-desc">Install once, restart Claude Code. The system runs silently from that point forward.</p>
 
-  <div class="flow-steps">
-    <div class="flow-step">
-      <div class="flow-step-num">01</div>
-      <div class="flow-step-icon" style="background: rgba(34, 211, 238, 0.1); color: var(--accent-cyan);">&#9889;</div>
-      <h3>Session Start</h3>
-      <p>Long-term facts, guardrails, and decisions are injected as system context. Claude starts every session knowing what it learned before.</p>
+  <div class="steps-grid">
+    <div class="step">
+      <div class="step-num">01</div>
+      <h3>Session starts</h3>
+      <p>Long-term facts, guardrails, and decisions are injected as system context. Claude begins every session knowing what it learned before.</p>
     </div>
-    <div class="flow-step">
-      <div class="flow-step-num">02</div>
-      <div class="flow-step-icon" style="background: rgba(52, 211, 153, 0.1); color: var(--accent-emerald);">&#128270;</div>
-      <h3>Every Prompt</h3>
-      <p>6-way parallel retrieval finds relevant facts, error solutions, guardrails, and code structure — injected as additional context in &lt;30ms.</p>
+    <div class="step">
+      <div class="step-num">02</div>
+      <h3>Every prompt</h3>
+      <p>Six retrieval strategies run in parallel &mdash; semantic, BM25, graph, temporal, file-path, code &mdash; fused via Reciprocal Rank Fusion. Relevant context appears in &lt;30ms.</p>
     </div>
-    <div class="flow-step">
-      <div class="flow-step-num">03</div>
-      <div class="flow-step-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--accent-amber);">&#129504;</div>
-      <h3>Background Extraction</h3>
-      <p>At 40%, 70%, and 90% context usage, knowledge is extracted via Claude Sonnet — facts, entities, relationships, decisions.</p>
-    </div>
-    <div class="flow-step">
-      <div class="flow-step-num">04</div>
-      <div class="flow-step-icon" style="background: rgba(167, 139, 250, 0.1); color: var(--accent-violet);">&#128338;</div>
-      <h3>Decay &amp; Promote</h3>
-      <p>Short-term memories fade. Items reinforced across 3+ sessions promote to long-term. Items seen in 3+ projects go global.</p>
+    <div class="step">
+      <div class="step-num">03</div>
+      <h3>Background extraction</h3>
+      <p>At 40%, 70%, and 90% context usage, Claude Sonnet extracts structured knowledge: facts, entities, relationships, decisions, guardrails, error solutions.</p>
     </div>
   </div>
 </section>
+
+<hr class="section-divider">
+
+<!-- Extraction Example -->
+<section id="extraction">
+  <div class="section-eyebrow">See It Work</div>
+  <h2 class="section-title">A conversation becomes<br>permanent knowledge</h2>
+  <p class="section-desc">The extraction pipeline processes your conversations and stores structured knowledge. Here's a real debugging session.</p>
+
+  <div class="extraction-pair">
+    <div class="ex-panel">
+      <div class="ex-panel-header input-h">Conversation</div>
+      <div class="ex-panel-body">
+        <div class="conv-turn">
+          <div class="conv-role u">You</div>
+          <div class="conv-text">The deploy is failing on staging. Timing out on the health check after the ECS task starts.</div>
+        </div>
+        <div class="conv-turn">
+          <div class="conv-role a">Claude</div>
+          <div class="conv-text">The health check path is /api/health but the app is on port 8000. The ALB target group is configured for port 80.</div>
+        </div>
+        <div class="conv-turn">
+          <div class="conv-role u">You</div>
+          <div class="conv-text">Right, we changed the port when we added gRPC. The Terraform in ops/terraform/staging/ecs.tf still has the old port.</div>
+        </div>
+        <div class="conv-turn">
+          <div class="conv-role u">You</div>
+          <div class="conv-text">Also &mdash; never change the port without updating both the ECS task def AND the ALB target group. We've been burned by this twice.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ex-panel">
+      <div class="ex-panel-header output-h">Extracted &rarr; stored</div>
+      <div class="ex-panel-body">
+        <div class="ex-item guardrail">
+          <div class="ex-item-type">Guardrail &middot; importance 9</div>
+          <div class="ex-item-text">Never change container port without updating both ECS task definition AND ALB target group</div>
+        </div>
+        <div class="ex-item fact">
+          <div class="ex-item-type">Fact &middot; long-term</div>
+          <div class="ex-item-text">Production backend runs on port 8000 (changed from 80 when gRPC was added)</div>
+        </div>
+        <div class="ex-item error">
+          <div class="ex-item-type">Error Solution</div>
+          <div class="ex-item-text">ECS health check timeout &rarr; check ALB target group port matches container port</div>
+        </div>
+        <div class="ex-item relation">
+          <div class="ex-item-type">Relationship</div>
+          <div class="ex-item-text">ecs.tf &mdash;[configures]&rarr; ALB target group</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="ex-caption">Next session: when someone edits ecs.tf, the guardrail surfaces automatically. If a similar timeout occurs, the error solution is recalled. The port fact is injected as context. Nobody has to explain any of this again.</p>
+</section>
+
+<hr class="section-divider">
+
+<!-- Comparison -->
+<section id="compare">
+  <div class="section-eyebrow">Comparison</div>
+  <h2 class="section-title">Not another CLAUDE.md file</h2>
+  <p class="section-desc">Manual context files are static. This is automatic, structured, and retrieval-aware.</p>
+
+  <div class="compare-wrap">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>CLAUDE.md</th>
+          <th>Cursor</th>
+          <th>Windsurf</th>
+          <th>ai-memory-db</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Auto-extraction</td><td class="cmp-no">Manual</td><td class="cmp-partial">Partial</td><td class="cmp-yes">Yes</td><td class="cmp-yes">3 passes/session</td></tr>
+        <tr><td>Knowledge types</td><td class="cmp-no">Free text</td><td class="cmp-partial">Key-value</td><td class="cmp-partial">Rules</td><td class="cmp-yes">8 structured types</td></tr>
+        <tr><td>Semantic search</td><td class="cmp-no">No</td><td class="cmp-partial">Basic</td><td class="cmp-no">No</td><td class="cmp-yes">6-way + RRF</td></tr>
+        <tr><td>Temporal decay</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-yes">3-class exponential</td></tr>
+        <tr><td>Project isolation</td><td class="cmp-partial">Per file</td><td class="cmp-no">Global</td><td class="cmp-partial">Workspace</td><td class="cmp-yes">Per-repo + promote</td></tr>
+        <tr><td>Entity graph</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-yes">2-hop BFS</td></tr>
+        <tr><td>Code graph</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-yes">5 languages</td></tr>
+        <tr><td>Guardrail enforcement</td><td class="cmp-partial">Manual</td><td class="cmp-no">No</td><td class="cmp-partial">Rules</td><td class="cmp-yes">Auto + git stash</td></tr>
+        <tr><td>Data stays local</td><td class="cmp-yes">File</td><td class="cmp-no">Cloud</td><td class="cmp-yes">Local</td><td class="cmp-yes">DuckDB on disk</td></tr>
+        <tr><td>Dashboard</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-no">No</td><td class="cmp-yes">Full CRUD + graphs</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="section-divider">
 
 <!-- Features -->
 <section id="features">
-  <div class="section-label">Features</div>
-  <h2 class="section-title">Everything you need.<br>Nothing you don't.</h2>
+  <div class="section-eyebrow">Features</div>
+  <h2 class="section-title">Built for engineering teams<br>who ship daily</h2>
 
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">&#128218;</div>
-      <h3>8 Knowledge Types</h3>
-      <p>Facts, decisions, guardrails, procedures, error solutions, observations, entities, and relationships — each with distinct recall priority.</p>
+  <div class="feat-grid">
+    <div class="feat-card">
+      <div class="feat-tag retrieval">Retrieval</div>
+      <h3>6-way parallel search</h3>
+      <p>Semantic, BM25, entity graph, temporal, file-path, and code symbol search &mdash; fused via Reciprocal Rank Fusion in &lt;30ms.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#127760;</div>
-      <h3>Project Scoping</h3>
+    <div class="feat-card">
+      <div class="feat-tag extract">Extraction</div>
+      <h3>8 knowledge types</h3>
+      <p>Facts, decisions, guardrails, procedures, error solutions, observations, entities, relationships &mdash; each with distinct recall priority.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-tag safety">Safety</div>
+      <h3>Guardrail enforcement</h3>
+      <p>PostToolUse hook detects edits to guardrailed files and auto-stashes via git. Correction detection supersedes bad facts.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-tag retrieval">Retrieval</div>
+      <h3>Code graph</h3>
+      <p>Multi-language AST parsing via tree-sitter. Python, TypeScript, JavaScript, Go, Rust &mdash; symbols, imports, and dependency chains.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-tag extract">Extraction</div>
+      <h3>Temporal decay</h3>
+      <p>Short-term facts fade at 0.18/day. Reinforced items promote through medium to long-term. Items in 3+ projects go global.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-tag viz">Dashboard</div>
+      <h3>Web dashboard</h3>
+      <p>Next.js + Cytoscape.js. Full CRUD, entity graph, code dependency view, live polling, per-scope filtering, PNG export.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-tag safety">Safety</div>
+      <h3>Auto-snapshots</h3>
+      <p>Database snapshot on every session end, rotating last 5. Export to JSON, import from JSON, restore from any snapshot.</p>
+    </div>
+    <div class="feat-card">
+      <div class="feat-tag retrieval">Retrieval</div>
+      <h3>Project scoping</h3>
       <p>Knowledge is isolated per git repo. Facts from project A never leak into project B. Cross-project items auto-promote to global.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#128736;</div>
-      <h3>22 Slash Commands</h3>
-      <p>/remember, /forget, /reflect, /search-memory, /knowledge, /audit-memory, /export-memory, and 15 more for full control.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#129302;</div>
-      <h3>Code Graph</h3>
-      <p>Multi-language AST parsing (Python, TypeScript, Go, Rust) via tree-sitter. Symbols, imports, and dependencies tracked per file.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#128737;</div>
-      <h3>Guardrail Enforcement</h3>
-      <p>PostToolUse hook detects edits to guardrailed files and auto-stashes via git. Correction detection auto-supersedes bad facts.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#128202;</div>
-      <h3>Web Dashboard</h3>
-      <p>Next.js + Cytoscape.js dashboard with full CRUD, graph visualization, live polling, code graph, and per-scope filtering.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#128190;</div>
-      <h3>Auto-Snapshots</h3>
-      <p>DB snapshot on every session end (rotating last 5). Export to JSON, import from JSON, restore from any snapshot.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#128274;</div>
-      <h3>Local-First</h3>
-      <p>Everything runs locally. DuckDB for storage, Ollama/ONNX for embeddings. Your knowledge never leaves your machine.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">&#9889;</div>
-      <h3>Graceful Degradation</h3>
-      <p>Ollama down? Falls back to ONNX. API fails? Recall still works. DB locked? Retries with backoff. No crash, ever.</p>
+    <div class="feat-card">
+      <div class="feat-tag extract">Extraction</div>
+      <h3>22 slash commands</h3>
+      <p>/remember, /forget, /reflect, /knowledge, /audit-memory, /export-memory &mdash; full control over what's stored and recalled.</p>
     </div>
   </div>
 </section>
 
-<!-- Retrieval Pipeline -->
-<section id="retrieval">
-  <div class="section-label">Retrieval Pipeline</div>
-  <h2 class="section-title">Six strategies. One fused result.</h2>
-  <p class="section-desc">
-    Every prompt triggers parallel retrieval across six strategies, fused via Reciprocal Rank Fusion. The best results surface regardless of how the knowledge was stored.
-  </p>
-
-  <div class="pipeline-grid">
-    <div class="pipeline-item">
-      <div class="pipeline-name" style="color: var(--accent-cyan);">Semantic</div>
-      <div class="pipeline-desc">Embedding cosine similarity across 9 tables. Finds conceptually related facts even with different wording.</div>
-      <div class="pipeline-speed">~50ms &middot; 768-dim vectors</div>
-    </div>
-    <div class="pipeline-item">
-      <div class="pipeline-name" style="color: var(--accent-emerald);">BM25</div>
-      <div class="pipeline-desc">Full-text keyword search via DuckDB FTS extension. Catches exact terms that embedding search misses.</div>
-      <div class="pipeline-speed">~10ms &middot; keyword matching</div>
-    </div>
-    <div class="pipeline-item">
-      <div class="pipeline-name" style="color: var(--accent-violet);">Graph</div>
-      <div class="pipeline-desc">2-hop BFS through entity relationships. Finds facts connected to mentioned entities even when not directly similar.</div>
-      <div class="pipeline-speed">~20ms &middot; entity traversal</div>
-    </div>
-    <div class="pipeline-item">
-      <div class="pipeline-name" style="color: var(--accent-amber);">Temporal</div>
-      <div class="pipeline-desc">Date-range filtering for queries like "last week" or "yesterday." Surfaces recent context when time matters.</div>
-      <div class="pipeline-speed">~5ms &middot; date parsing</div>
-    </div>
-    <div class="pipeline-item">
-      <div class="pipeline-name" style="color: var(--accent-rose);">Path</div>
-      <div class="pipeline-desc">File-path matching via fact_file_links. When you mention a file, its guardrails and linked facts surface.</div>
-      <div class="pipeline-speed">~10ms &middot; path matching</div>
-    </div>
-    <div class="pipeline-item">
-      <div class="pipeline-name" style="color: var(--text-primary);">Code</div>
-      <div class="pipeline-desc">Symbol and dependency graph search. Finds functions, classes, and import chains from the code graph.</div>
-      <div class="pipeline-speed">~15ms &middot; AST-powered</div>
-    </div>
-  </div>
-</section>
+<hr class="section-divider">
 
 <!-- Architecture -->
 <section id="architecture" style="max-width: 1200px;">
-  <div class="section-label">Architecture</div>
-  <h2 class="section-title">The full pipeline,<br>end to end</h2>
-  <p class="section-desc">
-    Two injection layers (session + per-prompt), three extraction triggers, six retrieval strategies — all converging on a single DuckDB knowledge base.
-  </p>
+  <div class="section-eyebrow">Architecture</div>
+  <h2 class="section-title">The full pipeline</h2>
+  <p class="section-desc">Two injection layers, three extraction triggers, six retrieval strategies &mdash; all converging on a single DuckDB knowledge base.</p>
 
-  <div class="arch-diagram">
+  <div class="arch-box">
     <pre>
-<span style="color: var(--accent-cyan);">┌─────────────────────────────────────────────────────────────────────────┐</span>
-<span style="color: var(--accent-cyan);">│</span>                        <span style="color: var(--text-primary); font-weight: 500;">Claude Code Session</span>                          <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">│</span>                                                                         <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">┌───────────┐</span>  <span style="color: var(--text-muted);">┌──────────────┐</span>  <span style="color: var(--text-muted);">┌──────────────┐</span>  <span style="color: var(--text-muted);">┌───────────┐</span> <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">User</span>      <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">Claude</span>       <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">Status Bar</span>   <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> <span style="color: var(--text-primary);">MCP Tools</span> <span style="color: var(--text-muted);">│</span> <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">│</span> Prompts   <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> Responses    <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> "mem: 45%"   <span style="color: var(--text-muted);">│</span>  <span style="color: var(--text-muted);">│</span> (on-demand<span style="color: var(--text-muted);">│</span> <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">│</span>  <span style="color: var(--text-muted);">└─────┬─────┘</span>  <span style="color: var(--text-muted);">└──────────────┘</span>  <span style="color: var(--text-muted);">└──────┬───────┘</span>  <span style="color: var(--text-muted);">└─────┬─────┘</span> <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">│</span>        <span style="color: var(--text-muted);">│</span>                                  <span style="color: var(--text-muted);">│</span>                <span style="color: var(--text-muted);">│</span>       <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-cyan);">└────────┼──────────────────────────────────┼────────────────┼───────┘</span>
-         <span style="color: var(--text-muted);">│</span>                                  <span style="color: var(--text-muted);">│</span>                <span style="color: var(--text-muted);">│</span>
-    <span style="color: var(--accent-amber);">HOOKS</span><span style="color: var(--text-muted);">│</span>(automatic)                       <span style="color: var(--text-muted);">│</span>           <span style="color: var(--accent-cyan);">MCP SERVER</span>
-         <span style="color: var(--text-muted);">│</span>                                  <span style="color: var(--text-muted);">│</span>           (stdio/JSON-RPC)
-         <span style="color: var(--text-muted);">▼</span>                                  <span style="color: var(--text-muted);">▼</span>                <span style="color: var(--text-muted);">▼</span>
-<span style="color: var(--accent-emerald);">┌─────────────────┐</span>  <span style="color: var(--accent-amber);">┌──────────────────┐</span>  <span style="color: var(--accent-cyan);">┌─────────────────────────┐</span>
-<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-primary); font-weight: 500;">SESSION START</span>   <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-primary); font-weight: 500;">STATUS LINE</span>      <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-primary); font-weight: 500;">memory_mcp_server.py</span>    <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">│</span>                 <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> (every ~10-30s)  <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span>                         <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">• session_recall</span><span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Show ctx %</span>     <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">Tools:</span>                  <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">• Inject long/</span>  <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Trigger extract</span><span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_search</span>         <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">  medium facts</span>  <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">  at 40/70/90%</span>   <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_store</span>          <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">• systemMessage</span><span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Prefetch next</span>  <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_guardrail</span>      <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">│</span> <span style="color: var(--text-muted);">  output</span>        <span style="color: var(--accent-emerald);">│</span>  <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">  prompt context</span> <span style="color: var(--accent-amber);">│</span>  <span style="color: var(--accent-cyan);">│</span> <span style="color: var(--text-muted);">• memory_check_file</span>     <span style="color: var(--accent-cyan);">│</span>
-<span style="color: var(--accent-emerald);">└─────────────────┘</span>  <span style="color: var(--accent-amber);">└────────┬─────────┘</span>  <span style="color: var(--accent-cyan);">└────────────┬────────────┘</span>
-                              <span style="color: var(--text-muted);">│</span>                         <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">┌────────▼─────────┐</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-primary); font-weight: 500;">_extract_worker</span>  <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">(background)</span>     <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Claude extract</span> <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Embed &amp; upsert</span> <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Consolidate</span>    <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">│</span> <span style="color: var(--text-muted);">• Decay pass</span>     <span style="color: var(--accent-amber);">│</span>              <span style="color: var(--text-muted);">│</span>
-                     <span style="color: var(--accent-amber);">└────────┬─────────┘</span>              <span style="color: var(--text-muted);">│</span>
-                              <span style="color: var(--text-muted);">│</span>                         <span style="color: var(--text-muted);">│</span>
-                              <span style="color: var(--text-muted);">▼</span>                         <span style="color: var(--text-muted);">▼</span>
-            <span style="color: var(--accent-violet);">┌────────────────────────────────────────────┐</span>
-            <span style="color: var(--accent-violet);">│</span>     <span style="color: var(--text-primary); font-weight: 500;">~/.claude/memory/knowledge.duckdb</span>        <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>                                            <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">facts · decisions · guardrails · entities</span>  <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">relationships · procedures · error_solutions</span><span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">observations · code_symbols · communities</span>  <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>                                            <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">HNSW vector indexes (768-dim)</span>              <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">│</span>  <span style="color: var(--text-muted);">Scope: per-repo + __global__</span>               <span style="color: var(--accent-violet);">│</span>
-            <span style="color: var(--accent-violet);">└────────────────────────────────────────────┘</span>
+<span class="ac">&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
+<span class="ac">&#9474;</span>                        <span class="aw">Claude Code Session</span>                          <span class="ac">&#9474;</span>
+<span class="ac">&#9474;</span>                                                                         <span class="ac">&#9474;</span>
+<span class="ac">&#9474;</span>  <span class="am">User Prompts</span>    <span class="am">Claude Responses</span>    <span class="am">Status Bar</span>       <span class="am">MCP Tools</span>     <span class="ac">&#9474;</span>
+<span class="ac">&#9474;</span>       <span class="am">&#9474;</span>                                  <span class="am">&#9474;</span>                <span class="am">&#9474;</span>           <span class="ac">&#9474;</span>
+<span class="ac">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
+         <span class="am">&#9474;</span>                                  <span class="am">&#9474;</span>                <span class="am">&#9474;</span>
+    <span class="aa">HOOKS</span> <span class="am">(automatic)</span>                       <span class="am">&#9474;</span>           <span class="ac">MCP SERVER</span>
+         <span class="am">&#9474;</span>                                  <span class="am">&#9474;</span>           <span class="am">(stdio/JSON-RPC)</span>
+         <span class="am">&#9660;</span>                                  <span class="am">&#9660;</span>                <span class="am">&#9660;</span>
+<span class="ae">&#9484; SESSION START &#9488;</span>   <span class="aa">&#9484; STATUS LINE      &#9488;</span>   <span class="ac">&#9484; memory_mcp_server.py    &#9488;</span>
+<span class="ae">&#9474;</span> <span class="am">session_recall</span> <span class="ae">&#9474;</span>   <span class="aa">&#9474;</span> <span class="am">Show ctx %</span>      <span class="aa">&#9474;</span>   <span class="ac">&#9474;</span> <span class="am">memory_search</span>          <span class="ac">&#9474;</span>
+<span class="ae">&#9474;</span> <span class="am">Inject context</span> <span class="ae">&#9474;</span>   <span class="aa">&#9474;</span> <span class="am">Trigger extract</span> <span class="aa">&#9474;</span>   <span class="ac">&#9474;</span> <span class="am">memory_store</span>           <span class="ac">&#9474;</span>
+<span class="ae">&#9474;</span> <span class="am">systemMessage</span>  <span class="ae">&#9474;</span>   <span class="aa">&#9474;</span> <span class="am">at 40/70/90%</span>    <span class="aa">&#9474;</span>   <span class="ac">&#9474;</span> <span class="am">memory_guardrail</span>       <span class="ac">&#9474;</span>
+<span class="ae">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>   <span class="aa">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>   <span class="ac">&#9474;</span> <span class="am">memory_check_file</span>      <span class="ac">&#9474;</span>
+                              <span class="am">&#9474;</span>                <span class="ac">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
+                     <span class="aa">&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9524;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;</span>              <span class="am">&#9474;</span>
+                     <span class="aa">&#9474;</span> <span class="aw">_extract_worker</span>  <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
+                     <span class="aa">&#9474;</span> <span class="am">Claude extract</span>   <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
+                     <span class="aa">&#9474;</span> <span class="am">Embed &amp; upsert</span>   <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
+                     <span class="aa">&#9474;</span> <span class="am">Consolidate</span>      <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
+                     <span class="aa">&#9474;</span> <span class="am">Decay pass</span>       <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
+                     <span class="aa">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>              <span class="am">&#9474;</span>
+                              <span class="am">&#9474;</span>                         <span class="am">&#9474;</span>
+                              <span class="am">&#9660;</span>                         <span class="am">&#9660;</span>
+            <span class="av">&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;</span>
+            <span class="av">&#9474;</span>     <span class="aw">~/.claude/memory/knowledge.duckdb</span>        <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>                                            <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>  <span class="am">facts &middot; decisions &middot; guardrails &middot; entities</span>  <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>  <span class="am">relationships &middot; procedures &middot; errors</span>       <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>  <span class="am">observations &middot; code_symbols &middot; communities</span> <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>                                            <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>  <span class="am">HNSW vector indexes (768-dim)</span>              <span class="av">&#9474;</span>
+            <span class="av">&#9474;</span>  <span class="am">Scope: per-repo + __global__</span>               <span class="av">&#9474;</span>
+            <span class="av">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
     </pre>
   </div>
 
-  <!-- 6-pass extraction timeline -->
-  <h3 style="font-family: var(--font-display); font-size: 1.5rem; margin-top: 4rem; margin-bottom: 0.5rem;">Extraction &amp; Recall Passes</h3>
-  <p class="section-desc" style="margin-bottom: 2rem;">Six distinct passes run during a session lifecycle — three for extraction, two for recall, one for maintenance.</p>
+  <h3 style="font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; margin-top: 3rem; margin-bottom: 1.5rem;">Extraction &amp; Recall Passes</h3>
 
-  <div class="arch-pass">
-    <div class="arch-pass-line">
-      <div class="arch-pass-dot" style="border-color: var(--accent-emerald);"></div>
-      <div class="arch-pass-connector"></div>
+  <div class="pass-list">
+    <div class="pass-item">
+      <div class="pass-line"><div class="pass-dot" style="border-color: var(--sage);"></div><div class="pass-connector"></div></div>
+      <div class="pass-body">
+        <div class="pass-trigger" style="color: var(--sage);">Pass 1 &mdash; Session Start Recall</div>
+        <div class="pass-desc">Long-term and medium-term facts, decisions, guardrails, entities, procedures, and community summaries injected as <code style="font-family:var(--font-mono);font-size:0.75rem;background:var(--bg-muted);padding:0.1rem 0.3rem;border-radius:3px">systemMessage</code> (~3000 tokens). Triggers incremental code graph parse.</div>
+        <div class="pass-badge" style="background: var(--sage-light); color: var(--sage);">SessionStart hook</div>
+      </div>
     </div>
-    <div class="arch-pass-content">
-      <div class="arch-pass-trigger" style="color: var(--accent-emerald);">Pass 1 &mdash; Session Start Recall</div>
-      <div class="arch-pass-desc">Fires once when Claude Code opens. Queries long-term and medium-term facts, decisions, guardrails, entities, procedures, and community summaries. Injects as <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">systemMessage</code> (~3000 tokens). Also triggers incremental code graph parse.</div>
-      <div class="arch-pass-badge" style="background: rgba(52, 211, 153, 0.1); color: var(--accent-emerald);">SessionStart hook</div>
+    <div class="pass-item">
+      <div class="pass-line"><div class="pass-dot" style="border-color: var(--accent);"></div><div class="pass-connector"></div></div>
+      <div class="pass-body">
+        <div class="pass-trigger" style="color: var(--accent);">Pass 2 &mdash; Per-Prompt Recall</div>
+        <div class="pass-desc">6-way parallel retrieval (semantic, BM25, graph, temporal, path, code) fused via RRF. Injected as <code style="font-family:var(--font-mono);font-size:0.75rem;background:var(--bg-muted);padding:0.1rem 0.3rem;border-radius:3px">additionalContext</code> (~4000 tokens). Includes defensive guardrail/procedure/error_solution lookup.</div>
+        <div class="pass-badge" style="background: rgba(194,65,12,0.08); color: var(--accent);">UserPromptSubmit hook &middot; &lt;30ms</div>
+      </div>
     </div>
-
-    <div class="arch-pass-line">
-      <div class="arch-pass-dot" style="border-color: var(--accent-cyan);"></div>
-      <div class="arch-pass-connector"></div>
+    <div class="pass-item">
+      <div class="pass-line"><div class="pass-dot" style="border-color: var(--amber);"></div><div class="pass-connector"></div></div>
+      <div class="pass-body">
+        <div class="pass-trigger" style="color: var(--amber);">Passes 3&ndash;5 &mdash; Incremental Extraction (40%, 70%, 90%)</div>
+        <div class="pass-desc">Background worker parses conversation delta, calls Claude Sonnet with tool_use for structured extraction, deduplicates against prior passes and recalled items. Each pass receives the prior narrative summary as context.</div>
+        <div class="pass-badge" style="background: var(--amber-light); color: var(--amber);">StatusLine trigger &middot; background</div>
+      </div>
     </div>
-    <div class="arch-pass-content">
-      <div class="arch-pass-trigger" style="color: var(--accent-cyan);">Pass 2 &mdash; Per-Prompt Recall</div>
-      <div class="arch-pass-desc">Fires on every user prompt. Runs 6-way parallel retrieval (semantic, BM25, graph, temporal, path, code) fused via RRF. Injects as <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">additionalContext</code> (~4000 tokens). Includes defensive guardrail/procedure/error_solution lookup.</div>
-      <div class="arch-pass-badge" style="background: rgba(34, 211, 238, 0.1); color: var(--accent-cyan);">UserPromptSubmit hook &middot; &lt;30ms</div>
+    <div class="pass-item">
+      <div class="pass-line"><div class="pass-dot" style="border-color: var(--violet);"></div><div class="pass-connector"></div></div>
+      <div class="pass-body">
+        <div class="pass-trigger" style="color: var(--violet);">Pass 6 &mdash; Session End Maintenance</div>
+        <div class="pass-desc">Final extraction, narrative finalization, consolidation (synthesize observations), temporal decay pass, purge soft-deleted items (&gt;30 days), rebuild FTS indexes, auto-snapshot database.</div>
+        <div class="pass-badge" style="background: var(--violet-light); color: var(--violet);">SessionEnd + PreCompact hooks</div>
+      </div>
     </div>
-
-    <div class="arch-pass-line">
-      <div class="arch-pass-dot" style="border-color: var(--accent-amber);"></div>
-      <div class="arch-pass-connector"></div>
-    </div>
-    <div class="arch-pass-content">
-      <div class="arch-pass-trigger" style="color: var(--accent-amber);">Pass 3 &mdash; Incremental Extraction (40%)</div>
-      <div class="arch-pass-desc">When context window hits 40%, the status line spawns a background worker. Parses the conversation delta (new messages since last pass), calls Claude Sonnet with <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">tool_use</code> for structured extraction, deduplicates against prior passes and recalled items.</div>
-      <div class="arch-pass-badge" style="background: rgba(245, 158, 11, 0.1); color: var(--accent-amber);">StatusLine trigger &middot; background</div>
-    </div>
-
-    <div class="arch-pass-line">
-      <div class="arch-pass-dot" style="border-color: var(--accent-amber);"></div>
-      <div class="arch-pass-connector"></div>
-    </div>
-    <div class="arch-pass-content">
-      <div class="arch-pass-trigger" style="color: var(--accent-amber);">Pass 4 &amp; 5 &mdash; Deeper Extraction (70%, 90%)</div>
-      <div class="arch-pass-desc">Same pipeline, triggered at higher context usage. Each pass receives the prior narrative summary as context, enabling chained extraction without re-processing old content. Cross-pass dedup threshold is tighter (0.85 vs 0.92).</div>
-      <div class="arch-pass-badge" style="background: rgba(245, 158, 11, 0.1); color: var(--accent-amber);">StatusLine trigger &middot; incremental delta</div>
-    </div>
-
-    <div class="arch-pass-line">
-      <div class="arch-pass-dot" style="border-color: var(--accent-violet);"></div>
-      <div class="arch-pass-connector"></div>
-    </div>
-    <div class="arch-pass-content">
-      <div class="arch-pass-trigger" style="color: var(--accent-violet);">Pass 6 &mdash; Session End Maintenance</div>
-      <div class="arch-pass-desc">Final extraction with <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.75rem;">is_final=True</code>. Finalizes narratives, runs consolidation (synthesizes observations from facts), applies temporal decay pass, purges hard-deleted items (soft-deleted &gt;30 days), rebuilds FTS indexes, auto-snapshots the database.</div>
-      <div class="arch-pass-badge" style="background: rgba(167, 139, 250, 0.1); color: var(--accent-violet);">SessionEnd hook &middot; PreCompact hook</div>
-    </div>
-
-    <div class="arch-pass-line">
-      <div class="arch-pass-dot" style="border-color: var(--accent-rose);"></div>
-      <div class="arch-pass-connector" style="background: transparent;"></div>
-    </div>
-    <div class="arch-pass-content">
-      <div class="arch-pass-trigger" style="color: var(--accent-rose);">Continuous &mdash; PostToolUse Guard</div>
-      <div class="arch-pass-desc">Fires after every Write/Edit tool call. Re-parses modified files in the code graph. Checks guardrails linked to edited files — auto-stashes via git if a guardrail is violated.</div>
-      <div class="arch-pass-badge" style="background: rgba(251, 113, 133, 0.1); color: var(--accent-rose);">PostToolUse hook &middot; per-file</div>
+    <div class="pass-item">
+      <div class="pass-line"><div class="pass-dot" style="border-color: var(--rose);"></div><div class="pass-connector" style="background:transparent;"></div></div>
+      <div class="pass-body">
+        <div class="pass-trigger" style="color: var(--rose);">Continuous &mdash; PostToolUse Guard</div>
+        <div class="pass-desc">Fires after every Write/Edit. Re-parses modified files in the code graph. Checks guardrails linked to edited files &mdash; auto-stashes via git if violated.</div>
+        <div class="pass-badge" style="background: var(--rose-light); color: var(--rose);">PostToolUse hook &middot; per-file</div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- Dashboard -->
-<section id="dashboard">
-  <div class="section-label">Web Dashboard</div>
-  <h2 class="section-title">See what your AI<br>actually remembers</h2>
-  <p class="section-desc">
-    A full-featured Next.js dashboard for exploring, managing, and visualizing the knowledge base. CRUD on all item types, graph visualization, live polling, and per-scope filtering.
-  </p>
+<hr class="section-divider">
 
-  <div class="dashboard-grid">
-    <div class="dashboard-card">
-      <div class="dashboard-card-icon">&#128202;</div>
-      <h3>Stats Overview</h3>
-      <p>At-a-glance counts for all 11 knowledge types. Click any card to dive into that section. Live-polls every 5 seconds.</p>
-    </div>
+<!-- MCP Tools -->
+<section id="mcp">
+  <div class="section-eyebrow">MCP Integration</div>
+  <h2 class="section-title">Four tools for any MCP client</h2>
+  <p class="section-desc">The memory system exposes an MCP server (stdio JSON-RPC 2.0) that any compatible client can use &mdash; not just Claude Code hooks.</p>
 
-    <div class="dashboard-card">
-      <div class="dashboard-card-icon">&#128209;</div>
-      <h3>Facts &amp; Decisions</h3>
-      <p>Full table with decay bars, temporal badges, trend arrows, category badges. Filter by class, search by text. Create, edit, and soft-delete.</p>
-    </div>
+  <table class="api-table">
+    <thead>
+      <tr><th>Tool</th><th>Description</th><th>Input</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="api-path">memory_search</span></td>
+        <td>Semantic search across facts, guardrails, procedures, error solutions, decisions</td>
+        <td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted)">query, types[], limit</td>
+      </tr>
+      <tr>
+        <td><span class="api-path">memory_store</span></td>
+        <td>Store a fact, decision, guardrail, procedure, or error solution</td>
+        <td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted)">text, type, importance, file_paths[]</td>
+      </tr>
+      <tr>
+        <td><span class="api-path">memory_guardrail</span></td>
+        <td>Create a guardrail with warning, rationale, and consequence</td>
+        <td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted)">warning, rationale, consequence, file_paths[]</td>
+      </tr>
+      <tr>
+        <td><span class="api-path">memory_check_file</span></td>
+        <td>Get all memory (guardrails, procedures, facts) linked to a file path</td>
+        <td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted)">file_path</td>
+      </tr>
+    </tbody>
+  </table>
 
-    <div class="dashboard-card">
-      <div class="dashboard-card-icon">&#128296;</div>
-      <h3>Entity &amp; Relationship Graph</h3>
-      <p>Cytoscape.js visualization with full controls:</p>
-      <ul>
-        <li>6 layout algorithms (force-directed, circle, concentric, hierarchy, grid, CoSE)</li>
-        <li>Double-click focus mode with neighborhood highlight</li>
-        <li>Node count slider, label toggle, search with auto-zoom</li>
-        <li>Edge-type legend with click-to-filter</li>
-        <li>Export as high-res PNG</li>
-      </ul>
+  <div class="code-block" style="margin-top: 1.5rem; max-width: 100%;">
+    <div class="code-header">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <span>Register the MCP server</span>
     </div>
-
-    <div class="dashboard-card">
-      <div class="dashboard-card-icon">&#128187;</div>
-      <h3>Code Graph</h3>
-      <p>File dependency visualization. Nodes colored by language (Python, TypeScript, Go, Rust), sized by symbol count. Click a file to see:</p>
-      <ul>
-        <li>Symbol table (functions, classes, methods with line numbers)</li>
-        <li>Import dependencies (clickable navigation)</li>
-        <li>Dependents (what imports this file)</li>
-      </ul>
-    </div>
-
-    <div class="dashboard-card">
-      <div class="dashboard-card-icon">&#128737;</div>
-      <h3>Guardrails, Procedures &amp; Error Solutions</h3>
-      <p>Manage protective rules, how-to procedures, and error&rarr;fix pairs. File path badges show which files each item is linked to. Full CRUD.</p>
-    </div>
-
-    <div class="dashboard-card">
-      <div class="dashboard-card-icon">&#128270;</div>
-      <h3>Semantic Search</h3>
-      <p>Search across all knowledge types with type filter toggles. Results show similarity score, type badge, scope, and matched text.</p>
-    </div>
-  </div>
-
-  <div class="dashboard-start">
-    <div class="dashboard-start-step">
-      <div class="step-num">01 &mdash; Start the backend</div>
-      <code>python3 -m uvicorn dashboard.backend.server:app --port 9111</code>
-    </div>
-    <div class="dashboard-start-step">
-      <div class="step-num">02 &mdash; Start the frontend</div>
-      <code>cd dashboard/frontend &amp;&amp; npm install &amp;&amp; npm run dev</code>
-    </div>
-    <div class="dashboard-start-step">
-      <div class="step-num">03 &mdash; Open in browser</div>
-      <p>Visit <code>http://localhost:3000</code></p>
-    </div>
-    <div class="dashboard-start-step">
-      <div class="step-num">04 &mdash; That's it</div>
-      <p>Dashboard reads from your live DuckDB. Updates in real-time.</p>
+    <div class="code-body">
+<span class="kw">claude</span> mcp add <span class="fl">--scope</span> user \
+  <span class="fl">-e</span> PYTHONPATH=<span class="st">~/.claude</span> \
+  memory <span class="kw">python3</span> <span class="st">~/.claude/hooks/memory_mcp_server.py</span>
     </div>
   </div>
 </section>
+
+<hr class="section-divider">
+
+<!-- REST API -->
+<section id="api">
+  <div class="section-eyebrow">REST API</div>
+  <h2 class="section-title">50+ endpoints for the dashboard</h2>
+  <p class="section-desc">The FastAPI backend serves the web dashboard and exposes full CRUD on all knowledge types. Run locally on port 9111.</p>
+
+  <div class="api-groups">
+    <div class="api-group">
+      <div class="api-group-header">Knowledge CRUD</div>
+      <div class="api-group-body">
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/facts</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/decisions</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/guardrails</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/procedures</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/error_solutions</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/entities</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/relationships</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method post">POST</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/ideas</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method put">PUT</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/questions</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span><span class="api-method del">DEL</span> <span class="api-path">/api/v1/observations</span></div>
+      </div>
+    </div>
+    <div class="api-group">
+      <div class="api-group-header">Search, Graph &amp; System</div>
+      <div class="api-group-body">
+        <div class="api-group-item"><span class="api-method post">POST</span> <span class="api-path">/api/v1/search</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/relationships/graph</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/code-graph/graph</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/code-graph/files</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/code-graph/symbols/search</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/stats</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/scopes</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/v1/sessions</span></div>
+        <div class="api-group-item"><span class="api-method get">GET</span> <span class="api-path">/api/health</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-block" style="margin-top: 1.5rem; max-width: 100%;">
+    <div class="code-header">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <span>Start the API server</span>
+    </div>
+    <div class="code-body">
+<span class="kw">python3</span> <span class="fl">-m</span> uvicorn dashboard.backend.server:app <span class="fl">--port</span> <span class="st">9111</span>
+
+<span class="cm"># Interactive docs at http://localhost:9111/docs</span>
+    </div>
+  </div>
+</section>
+
+<hr class="section-divider">
 
 <!-- Install -->
 <section id="install">
-  <div class="section-label">Get Started</div>
+  <div class="section-eyebrow">Get Started</div>
   <h2 class="section-title">Install in 60 seconds</h2>
 
-  <div class="code-section">
+  <div class="install-grid">
     <div>
-      <p class="section-desc" style="margin-bottom: 1.5rem;">
-        One command. Restart Claude Code. That's it.
-        The system runs automatically from that point forward — no configuration, no manual steps.
+      <p class="section-desc" style="margin-bottom: 1.25rem;">
+        One command installs the memory package, hook scripts, and 22 slash commands into <code style="font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg-muted); padding: 0.1rem 0.35rem; border-radius: 4px;">~/.claude/</code>. Restart Claude Code. That's it.
       </p>
-      <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.7; font-weight: 300;">
-        The installer copies the memory package, hook scripts, and slash commands to <code style="font-family: var(--font-mono); color: var(--accent-cyan); font-size: 0.8rem;">~/.claude/</code>.
-        It configures hooks in your settings.json and runs the test suite to verify everything works.
+      <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.7; font-weight: 300; margin-bottom: 2rem;">
+        Everything runs locally. DuckDB stores your knowledge. Ollama (or ONNX Runtime) generates embeddings. Your data never leaves your machine.
       </p>
-      <div style="margin-top: 2rem;">
-        <a href="https://github.com/gilmanb1/ai-memory-db" class="btn-primary">Read the docs</a>
+      <div style="display: flex; gap: 0.75rem;">
+        <a href="https://github.com/gilmanb1/ai-memory-db" class="btn btn-primary">Read the docs</a>
+        <a href="demo.html" class="btn btn-ghost">Try the demo</a>
       </div>
     </div>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <span>terminal</span>
+      </div>
+      <div class="code-body">
+<span class="cm"># Prerequisites</span>
+<span class="kw">curl</span> <span class="fl">-LsSf</span> https://astral.sh/uv/install.sh <span class="kw">|</span> <span class="kw">sh</span>
+<span class="kw">ollama</span> pull nomic-embed-text
+<span class="kw">export</span> ANTHROPIC_API_KEY=<span class="st">"sk-ant-..."</span>
 
-    <div>
-      <div class="code-block">
-        <div class="code-header">
-          <div class="dots"><span></span><span></span><span></span></div>
-          terminal
-        </div>
-        <div class="code-content">
-<span class="comment"># Prerequisites</span>
-<span class="command">curl</span> <span class="flag">-LsSf</span> https://astral.sh/uv/install.sh <span class="command">|</span> <span class="command">sh</span>
-<span class="command">ollama</span> pull nomic-embed-text
-<span class="command">export</span> ANTHROPIC_API_KEY=<span class="string">"sk-ant-..."</span>
-
-<span class="comment"># Install</span>
-<span class="command">curl</span> <span class="flag">-fsSL</span> https://raw.githubusercontent.com/
+<span class="cm"># Install</span>
+<span class="kw">curl</span> <span class="fl">-fsSL</span> https://raw.githubusercontent.com/
   gilmanb1/ai-memory-db/master/
-  install-remote.sh <span class="command">|</span> <span class="command">bash</span>
+  install-remote.sh <span class="kw">|</span> <span class="kw">bash</span>
 
-<span class="comment"># Restart Claude Code — done</span>
-        </div>
+<span class="cm"># Restart Claude Code — done</span>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Footer -->
 <footer>
-  <p>
-    <a href="https://github.com/gilmanb1/ai-memory-db">ai-memory-db</a> &middot;
-    MIT License &middot;
-    Built for <a href="https://claude.ai/code">Claude Code</a>
-  </p>
+  <a href="https://github.com/gilmanb1/ai-memory-db">ai-memory-db</a> &middot;
+  MIT License &middot;
+  Built for <a href="https://claude.ai/code">Claude Code</a>
 </footer>
 
 <script>
-// Copy install command on click
+// Copy install command
 document.querySelector('.install-block')?.addEventListener('click', function() {
   const cmd = 'curl -fsSL https://raw.githubusercontent.com/gilmanb1/ai-memory-db/master/install-remote.sh | bash';
-  navigator.clipboard.writeText(cmd).then(() => {
-    const hint = this.querySelector('.copy-hint');
-    const orig = hint.textContent;
-    hint.textContent = 'copied!';
-    hint.style.color = 'var(--accent-emerald)';
-    setTimeout(() => { hint.textContent = orig; hint.style.color = ''; }, 2000);
-  });
+  navigator.clipboard.writeText(cmd);
 });
 
-// Staggered reveal on scroll
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach((entry, i) => {
+// Scroll reveal
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
     if (entry.isIntersecting) {
-      entry.target.style.animationDelay = `${i * 0.05}s`;
-      entry.target.classList.add('visible');
-      observer.unobserve(entry.target);
+      entry.target.style.opacity = '1';
+      entry.target.style.transform = 'translateY(0)';
+      obs.unobserve(entry.target);
     }
   });
-}, { threshold: 0.1 });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
-document.querySelectorAll('.flow-step, .feature-card, .pipeline-item, .dashboard-card, .arch-pass-content, .dashboard-start-step, .extracted-item, .extraction-box').forEach(el => {
+document.querySelectorAll('.step, .feat-card, .ex-panel, .ex-item, .compare-wrap, .pass-item, .api-group, .arch-box').forEach((el, i) => {
   el.style.opacity = '0';
-  el.style.transform = 'translateY(16px)';
-  el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-  observer.observe(el);
+  el.style.transform = 'translateY(12px)';
+  el.style.transition = `opacity 0.45s ease ${i * 0.03}s, transform 0.45s ease ${i * 0.03}s`;
+  obs.observe(el);
 });
-
-// Add visible class styles
-const style = document.createElement('style');
-style.textContent = '.visible { opacity: 1 !important; transform: translateY(0) !important; }';
-document.head.appendChild(style);
 </script>
-
 </body>
 </html>

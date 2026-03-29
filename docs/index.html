@@ -914,45 +914,99 @@ footer a:hover { color: var(--accent); }
   <h2 class="section-title">The full pipeline</h2>
   <p class="section-desc">Two injection layers, three extraction triggers, six retrieval strategies &mdash; all converging on a single DuckDB knowledge base.</p>
 
-  <div class="arch-box">
-    <pre>
-<span class="ac">&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
-<span class="ac">&#9474;</span>                        <span class="aw">Claude Code Session</span>                          <span class="ac">&#9474;</span>
-<span class="ac">&#9474;</span>                                                                         <span class="ac">&#9474;</span>
-<span class="ac">&#9474;</span>  <span class="am">User Prompts</span>    <span class="am">Claude Responses</span>    <span class="am">Status Bar</span>       <span class="am">MCP Tools</span>     <span class="ac">&#9474;</span>
-<span class="ac">&#9474;</span>       <span class="am">&#9474;</span>                                  <span class="am">&#9474;</span>                <span class="am">&#9474;</span>           <span class="ac">&#9474;</span>
-<span class="ac">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
-         <span class="am">&#9474;</span>                                  <span class="am">&#9474;</span>                <span class="am">&#9474;</span>
-    <span class="aa">HOOKS</span> <span class="am">(automatic)</span>                       <span class="am">&#9474;</span>           <span class="ac">MCP SERVER</span>
-         <span class="am">&#9474;</span>                                  <span class="am">&#9474;</span>           <span class="am">(stdio/JSON-RPC)</span>
-         <span class="am">&#9660;</span>                                  <span class="am">&#9660;</span>                <span class="am">&#9660;</span>
-<span class="ae">&#9484; SESSION START &#9488;</span>   <span class="aa">&#9484; STATUS LINE      &#9488;</span>   <span class="ac">&#9484; memory_mcp_server.py    &#9488;</span>
-<span class="ae">&#9474;</span> <span class="am">session_recall</span> <span class="ae">&#9474;</span>   <span class="aa">&#9474;</span> <span class="am">Show ctx %</span>      <span class="aa">&#9474;</span>   <span class="ac">&#9474;</span> <span class="am">memory_search</span>          <span class="ac">&#9474;</span>
-<span class="ae">&#9474;</span> <span class="am">Inject context</span> <span class="ae">&#9474;</span>   <span class="aa">&#9474;</span> <span class="am">Trigger extract</span> <span class="aa">&#9474;</span>   <span class="ac">&#9474;</span> <span class="am">memory_store</span>           <span class="ac">&#9474;</span>
-<span class="ae">&#9474;</span> <span class="am">systemMessage</span>  <span class="ae">&#9474;</span>   <span class="aa">&#9474;</span> <span class="am">at 40/70/90%</span>    <span class="aa">&#9474;</span>   <span class="ac">&#9474;</span> <span class="am">memory_guardrail</span>       <span class="ac">&#9474;</span>
-<span class="ae">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>   <span class="aa">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>   <span class="ac">&#9474;</span> <span class="am">memory_check_file</span>      <span class="ac">&#9474;</span>
-                              <span class="am">&#9474;</span>                <span class="ac">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
-                     <span class="aa">&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9524;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;</span>              <span class="am">&#9474;</span>
-                     <span class="aa">&#9474;</span> <span class="aw">_extract_worker</span>  <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
-                     <span class="aa">&#9474;</span> <span class="am">Claude extract</span>   <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
-                     <span class="aa">&#9474;</span> <span class="am">Embed &amp; upsert</span>   <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
-                     <span class="aa">&#9474;</span> <span class="am">Consolidate</span>      <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
-                     <span class="aa">&#9474;</span> <span class="am">Decay pass</span>       <span class="aa">&#9474;</span>              <span class="am">&#9474;</span>
-                     <span class="aa">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>              <span class="am">&#9474;</span>
-                              <span class="am">&#9474;</span>                         <span class="am">&#9474;</span>
-                              <span class="am">&#9660;</span>                         <span class="am">&#9660;</span>
-            <span class="av">&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;</span>
-            <span class="av">&#9474;</span>     <span class="aw">~/.claude/memory/knowledge.duckdb</span>        <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>                                            <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>  <span class="am">facts &middot; decisions &middot; guardrails &middot; entities</span>  <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>  <span class="am">relationships &middot; procedures &middot; errors</span>       <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>  <span class="am">observations &middot; code_symbols &middot; communities</span> <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>                                            <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>  <span class="am">HNSW vector indexes (768-dim)</span>              <span class="av">&#9474;</span>
-            <span class="av">&#9474;</span>  <span class="am">Scope: per-repo + __global__</span>               <span class="av">&#9474;</span>
-            <span class="av">&#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</span>
-    </pre>
-  </div>
+  <svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;height:auto;font-family:'Roboto',sans-serif;">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto">
+        <path d="M0,0 L10,3.5 L0,7 Z" fill="#A39E98"/>
+      </marker>
+      <filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.06"/></filter>
+    </defs>
+
+    <!-- Claude Code Session box -->
+    <rect x="60" y="10" width="780" height="90" rx="10" fill="#F5F0E8" stroke="#D4C9B9" stroke-width="1" filter="url(#shadow)"/>
+    <text x="450" y="38" text-anchor="middle" font-size="14" font-weight="600" fill="#292524">Claude Code Session</text>
+    <text x="145" y="65" text-anchor="middle" font-size="11" fill="#6B6560">User Prompts</text>
+    <text x="320" y="65" text-anchor="middle" font-size="11" fill="#6B6560">Claude Responses</text>
+    <text x="530" y="65" text-anchor="middle" font-size="11" fill="#6B6560">Status Bar</text>
+    <text x="720" y="65" text-anchor="middle" font-size="11" fill="#6B6560">MCP Tools</text>
+
+    <!-- Vertical connectors from session box -->
+    <line x1="145" y1="100" x2="145" y2="150" stroke="#A39E98" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="530" y1="100" x2="530" y2="150" stroke="#A39E98" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="720" y1="100" x2="720" y2="150" stroke="#A39E98" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- Labels on connectors -->
+    <text x="100" y="130" font-size="9" font-weight="500" fill="#B45309" font-family="'JetBrains Mono',monospace">HOOKS</text>
+    <text x="100" y="142" font-size="8" fill="#A39E98">(automatic)</text>
+    <text x="690" y="130" font-size="9" font-weight="500" fill="#4D7C6F" font-family="'JetBrains Mono',monospace">MCP</text>
+    <text x="690" y="142" font-size="8" fill="#A39E98">(on-demand)</text>
+
+    <!-- Session Start box -->
+    <rect x="30" y="155" width="200" height="105" rx="8" fill="#E8F0ED" stroke="#4D7C6F" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="130" y="178" text-anchor="middle" font-size="12" font-weight="600" fill="#292524">Session Start</text>
+    <text x="130" y="198" text-anchor="middle" font-size="10" fill="#6B6560">session_recall</text>
+    <text x="130" y="214" text-anchor="middle" font-size="10" fill="#6B6560">Inject long/medium facts</text>
+    <text x="130" y="230" text-anchor="middle" font-size="10" fill="#6B6560">Code graph parse</text>
+    <rect x="55" y="238" width="150" height="16" rx="3" fill="#4D7C6F" opacity="0.12"/>
+    <text x="130" y="250" text-anchor="middle" font-size="8" font-weight="500" fill="#4D7C6F" font-family="'JetBrains Mono',monospace">systemMessage ~3k tok</text>
+
+    <!-- User Prompt Submit box -->
+    <rect x="250" y="155" width="200" height="105" rx="8" fill="#FEF3C7" stroke="#B45309" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="350" y="178" text-anchor="middle" font-size="12" font-weight="600" fill="#292524">Every Prompt</text>
+    <text x="350" y="198" text-anchor="middle" font-size="10" fill="#6B6560">6-way parallel retrieval</text>
+    <text x="350" y="214" text-anchor="middle" font-size="10" fill="#6B6560">RRF fusion &lt;30ms</text>
+    <text x="350" y="230" text-anchor="middle" font-size="10" fill="#6B6560">Guardrail defense</text>
+    <rect x="275" y="238" width="150" height="16" rx="3" fill="#B45309" opacity="0.1"/>
+    <text x="350" y="250" text-anchor="middle" font-size="8" font-weight="500" fill="#B45309" font-family="'JetBrains Mono',monospace">additionalContext ~4k</text>
+
+    <!-- Status Line → Extract Worker -->
+    <rect x="470" y="155" width="200" height="105" rx="8" fill="#FFF7ED" stroke="#B45309" stroke-width="1" stroke-dasharray="4,3" filter="url(#shadow)"/>
+    <text x="570" y="178" text-anchor="middle" font-size="12" font-weight="600" fill="#292524">Status Line</text>
+    <text x="570" y="198" text-anchor="middle" font-size="10" fill="#6B6560">Monitor ctx window %</text>
+    <text x="570" y="214" text-anchor="middle" font-size="10" fill="#6B6560">Trigger at 40 / 70 / 90%</text>
+    <text x="570" y="230" text-anchor="middle" font-size="10" fill="#6B6560">Prefetch next prompt</text>
+    <rect x="495" y="238" width="150" height="16" rx="3" fill="#B45309" opacity="0.08"/>
+    <text x="570" y="250" text-anchor="middle" font-size="8" font-weight="500" fill="#B45309" font-family="'JetBrains Mono',monospace">background spawn</text>
+
+    <!-- MCP Server box -->
+    <rect x="690" y="155" width="150" height="105" rx="8" fill="#FEFBF6" stroke="#4D7C6F" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="765" y="178" text-anchor="middle" font-size="11" font-weight="600" fill="#292524">MCP Server</text>
+    <text x="765" y="198" text-anchor="middle" font-size="9" fill="#4D7C6F" font-family="'JetBrains Mono',monospace">memory_search</text>
+    <text x="765" y="213" text-anchor="middle" font-size="9" fill="#4D7C6F" font-family="'JetBrains Mono',monospace">memory_store</text>
+    <text x="765" y="228" text-anchor="middle" font-size="9" fill="#4D7C6F" font-family="'JetBrains Mono',monospace">memory_guardrail</text>
+    <text x="765" y="243" text-anchor="middle" font-size="9" fill="#4D7C6F" font-family="'JetBrains Mono',monospace">memory_check_file</text>
+
+    <!-- Arrow from Status Line down to Extract Worker -->
+    <line x1="570" y1="260" x2="570" y2="300" stroke="#A39E98" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <!-- Extract Worker box -->
+    <rect x="470" y="305" width="200" height="120" rx="8" fill="#FEF3C7" stroke="#B45309" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="570" y="328" text-anchor="middle" font-size="12" font-weight="600" fill="#292524">_extract_worker</text>
+    <text x="570" y="348" text-anchor="middle" font-size="10" fill="#6B6560">Claude Sonnet tool_use</text>
+    <text x="570" y="364" text-anchor="middle" font-size="10" fill="#6B6560">Embed &amp; upsert</text>
+    <text x="570" y="380" text-anchor="middle" font-size="10" fill="#6B6560">Consolidate observations</text>
+    <text x="570" y="396" text-anchor="middle" font-size="10" fill="#6B6560">Decay pass &amp; purge</text>
+    <rect x="495" y="404" width="150" height="14" rx="3" fill="#B45309" opacity="0.1"/>
+    <text x="570" y="415" text-anchor="middle" font-size="8" font-weight="500" fill="#B45309" font-family="'JetBrains Mono',monospace">incremental delta</text>
+
+    <!-- Arrows down to DuckDB -->
+    <line x1="570" y1="425" x2="570" y2="455" stroke="#A39E98" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="765" y1="260" x2="765" y2="430" stroke="#A39E98" stroke-width="1" stroke-dasharray="4,3"/>
+    <line x1="765" y1="430" x2="660" y2="468" stroke="#A39E98" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+    <!-- DuckDB box -->
+    <rect x="200" y="460" width="500" height="55" rx="10" fill="#EEEBFA" stroke="#6D5ACE" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="450" y="482" text-anchor="middle" font-size="13" font-weight="600" fill="#292524">~/.claude/memory/knowledge.duckdb</text>
+    <text x="450" y="500" text-anchor="middle" font-size="9" fill="#6B6560">facts &middot; decisions &middot; guardrails &middot; entities &middot; relationships &middot; procedures &middot; errors &middot; code_symbols</text>
+
+    <!-- Recall arrows back up from DuckDB to Session Start and Every Prompt -->
+    <path d="M300,460 Q200,400 130,260" fill="none" stroke="#4D7C6F" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+    <path d="M380,460 Q350,380 350,260" fill="none" stroke="#B45309" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+    <!-- Small labels on return arrows -->
+    <text x="175" y="370" font-size="8" fill="#4D7C6F" transform="rotate(-55,175,370)" font-family="'JetBrains Mono',monospace">recall</text>
+    <text x="345" y="380" font-size="8" fill="#B45309" transform="rotate(-80,345,380)" font-family="'JetBrains Mono',monospace">recall</text>
+  </svg>
 
   <h3 style="font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; margin-top: 3rem; margin-bottom: 1.5rem;">Extraction &amp; Recall Passes</h3>
 
